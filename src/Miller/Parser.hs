@@ -2,22 +2,36 @@
 
 module Miller.Parser where
 
+import           Control.Applicative
+import           Control.Monad
 import qualified Data.Text as T
+import           GHC.Exts
 import           Text.Parser.Char
+import           Text.Parser.Token
+import           Text.Parser.Token.Style (haskellIdents)
 import           Text.Trifecta
 
 import Miller.Expr
 
 parseProgram :: Parser CoreProgram
-parseProgram = Program <$> (parseDefn `sepByNonEmpty` some (char '\n'))
+parseProgram = Program <$> parseDefn `sepEndByNonEmpty` newline
 
 parseDefn :: Parser CoreDefn
 parseDefn = Defn <$> parseName
-                 <*> (parseName `sepEndBy` char ' ')
-                 <*> (string "=" *> spaces *> parseExpr)
+                 <*> many parseName
+                 <*> (token (char '=') *> parseExpr)
+
+parseAtomic :: Parser CoreExpr
+parseAtomic = choice
+  [ Num . fromIntegral <$> decimal
+  , Var <$> parseName
+  ] <?> "atomic expression"
+
+parseComplex :: Parser CoreExpr
+parseComplex = undefined
 
 parseExpr :: Parser CoreExpr
-parseExpr = undefined
+parseExpr = parseAtomic
 
 parseName :: Parser Name
-parseName = Name . T.pack <$> some alphaNum
+parseName = Name <$> ident haskellIdents
