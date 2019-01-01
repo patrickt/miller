@@ -1,5 +1,3 @@
-{-# LANGUAGE StrictData #-}
-
 module Miller.Heap
   ( Heap
   , Addr
@@ -32,8 +30,9 @@ data Heap a = Heap
 initial :: Heap a
 initial = Heap 0 [1..] mempty
 
-alloc :: Heap a -> (Heap a, Addr)
-alloc (Heap c (next:rest) es) = (Heap (succ c) rest es, Addr next)
+alloc :: a -> Heap a -> (Heap a, Addr)
+alloc x (Heap c (next:rest) es) = (Heap (succ c) rest new, Addr next) where
+  new = IM.insert next x es
 
 update :: Addr -> a -> Heap a -> Heap a
 update (Addr a) n h = h { entries = IM.insert a n (entries h) }

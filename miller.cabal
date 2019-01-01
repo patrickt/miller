@@ -17,13 +17,20 @@ executable miller
   hs-source-dirs:      src
   main-is:             Main.hs
   default-language:    Haskell2010
+  default-extensions:  StrictData
   other-modules:       Miller.Expr
                      , Miller.Parser
+                     , Miller.Stats
+                     , Miller.TI
                      , Miller.Heap
   build-depends:       base >= 4.7 && < 5
                      , containers
+                     , fused-effects
+                     , generic-monoid
+                     , hashable
                      , parsers
                      , prettyprinter
                      , recursion-schemes
                      , text
                      , trifecta
+                     , unordered-containers

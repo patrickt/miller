@@ -1,19 +1,21 @@
 {-# LANGUAGE DeriveFoldable, DeriveFunctor, DeriveTraversable, FlexibleInstances, GeneralizedNewtypeDeriving,
-             KindSignatures, LambdaCase, OverloadedLists, OverloadedStrings, StrictData, TemplateHaskell, TypeFamilies,
+             KindSignatures, LambdaCase, OverloadedLists, OverloadedStrings, TemplateHaskell, TypeFamilies,
              TypeSynonymInstances, DerivingStrategies #-}
 
 module Miller.Expr where
 
-import Data.Foldable
+import Data.Foldable hiding (toList)
 import Data.Functor.Foldable
 import Data.Functor.Foldable.TH
 import Data.List.NonEmpty (NonEmpty)
 import Data.String
 import Data.Text (Text)
 import Data.Text.Prettyprint.Doc
+import GHC.Exts (IsList (..))
+import Data.Hashable
 
 newtype Name = Name { unName :: Text }
-  deriving newtype (Eq, IsString, Pretty, Show)
+  deriving newtype (Eq, IsString, Pretty, Show, Hashable)
 
 data Rec = Non | Rec deriving (Eq, Show)
 
@@ -61,9 +63,14 @@ type CoreDefn = Defn Name
 instance Pretty CoreDefn where
   pretty (Defn n vars e) = pretty n <+> hsep (pretty <$> vars) <+> "=" <+> pretty e
 
-newtype Program a = Program (NonEmpty (Defn a))
-  deriving newtype (Eq, Show)
-  deriving stock Functor
+newtype Program a = Program { unProgram :: NonEmpty (Defn a) }
+  deriving newtype (Eq, Show, Semigroup)
+  deriving stock (Functor)
+
+instance IsList (Program a) where
+  type Item (Program a) = Defn a
+  fromList = Program . fromList
+  toList  = toList . unProgram
 
 type CoreProgram = Program Name
 
