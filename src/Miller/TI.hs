@@ -1,4 +1,4 @@
-{-# LANGUAGE ConstraintKinds, FlexibleContexts, FlexibleInstances, OverloadedLists, OverloadedStrings,
+{-# LANGUAGE ConstraintKinds, FlexibleContexts, FlexibleInstances, LambdaCase, OverloadedLists, OverloadedStrings,
              TypeApplications #-}
 
 module Miller.TI where
@@ -7,6 +7,7 @@ import           Control.Effect
 import           Control.Effect.Error
 import           Control.Effect.State
 import           Control.Effect.Writer
+import           Control.Monad
 import           Data.Foldable
 import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
@@ -20,6 +21,10 @@ data Node
   | Super Name [Name] CoreExpr
   | Leaf Int
 
+isDataNode :: Node -> Bool
+isDataNode (Leaf _) = True
+isDataNode _ = False
+
 type TIHeap = Heap Node
 
 type Stack = [Addr]
@@ -30,6 +35,9 @@ data Dump = Dump
 
 data Fatal
   = MainNotDefined
+  | EmptyStack
+  | AddrNotFound Addr
+  | NumAppliedAsFunction Int
 
 type Machine sig m
   = ( Member (State Stack)   sig
@@ -56,4 +64,31 @@ compile program = do
   buildInitialHeap scDefs
   gets @Globals (HM.lookup "main") >>= maybe (throwError MainNotDefined) (put @Stack . pure)
 
+eval :: Machine sig m => m ()
+eval = do
+  final <- isFinal
+  unless final $ do
+    tell (Stats 1 0)
+    step *> eval
 
+step :: Machine sig m => m ()
+step = do
+  stack <- get @Stack
+  when (null stack) (throwError EmptyStack)
+  lookupHeap (head stack) >>= \case
+    Leaf n  -> throwError (NumAppliedAsFunction n)
+    Ply a b -> modify @Stack (a:)
+    Super name args body -> do
+      bindings <- zip args <$> _getArgs
+      (newHeap, result) <- _instantiate body bindings
+      put @Stack (result : drop (succ (length args)) stack)
+      put @TIHeap newHeap
+
+lookupHeap :: Machine sig m => Addr -> m Node
+lookupHeap a = gets (Heap.lookup a) >>= maybe (throwError (AddrNotFound a)) pure
+
+isFinal :: Machine sig m => m Bool
+isFinal = get @Stack >>= \case
+  []  -> throwError EmptyStack
+  [a] -> isDataNode <$> lookupHeap a
+  _   -> pure False
