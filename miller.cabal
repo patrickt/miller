@@ -18,10 +18,11 @@ executable miller
   main-is:             Main.hs
   default-language:    Haskell2010
   default-extensions:  StrictData
+  ghc-options:         -Werror -Wall
   other-modules:       Miller.Expr
                      , Miller.Parser
                      , Miller.Stats
-                     , Miller.TI
+--                     , Miller.TI
                      , Miller.Heap
   build-depends:       base >= 4.7 && < 5
                      , containers

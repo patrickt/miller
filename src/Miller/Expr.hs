@@ -28,7 +28,7 @@ data Expr a
   | Num Int
   | Constr Int Int
   | Ap (Expr a) (Expr a)
-  | Let Rec [(a, Expr a)] (Expr a)
+  | Let Rec (NonEmpty (a, Expr a)) (Expr a)
   | Case (Expr a) Int [a] (Expr a)
   | Lam [a] (Expr a)
     deriving (Eq, Show, Functor)
@@ -43,7 +43,7 @@ instance Pretty CoreExpr where
     VarF n         -> pretty n
     NumF i         -> pretty i
     ApF f x        -> parens (f <+> x)
-    LetF r binds e -> parens (pretty r <+> prettyDefns binds <+> "in" <+> e)
+    LetF r binds e -> parens (pretty r <+> prettyDefns (toList binds) <+> "in" <+> e)
     _              -> "unimplemented"
     where
       prettyDefns = vsep . fmap (\(a, b) -> pretty a <+> "=" <+> b)
