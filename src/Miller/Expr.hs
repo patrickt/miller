@@ -29,7 +29,7 @@ data Expr a
   | Constr Int Int
   | Ap (Expr a) (Expr a)
   | Let Rec (NonEmpty (a, Expr a)) (Expr a)
-  | Case (Expr a) Int [a] (Expr a)
+  | Case (Expr a) (NonEmpty (Int, [a], Expr a))
   | Lam [a] (Expr a)
     deriving (Eq, Show, Functor)
 

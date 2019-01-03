@@ -20,7 +20,10 @@ import Miller.Expr
 
 identStyle :: (Alternative m, CharParsing m) => Token.IdentifierStyle m
 identStyle = IdentifierStyle "miller" letter (alphaNum <|> char '\'') kws HL.Identifier HL.ReservedIdentifier where
-  kws = ["let", "letrec", "in"]
+  kws = ["let", "letrec", "in", "case"]
+
+int :: (Monad m, TokenParsing m) => m Int
+int = fromIntegral <$> Token.integer
 
 reserved :: (Monad m, TokenParsing m) => Text -> m ()
 reserved = Token.reserveText identStyle
@@ -33,8 +36,10 @@ parseDefn = Defn <$> parseName <*> many parseName <*> (equals *> parseExpr)
 
 parseExpr :: (Monad m, TokenParsing m) => m CoreExpr
 parseExpr = choice
-  [ Let <$> parseRec <*> bindings <*> (reserved "in" *> parseExpr)
-  , parseAtomic
+  [ Let  <$> parseRec <*> bindings <*> (reserved "in" *> parseExpr)
+  , Case <$> (reserved "case" *> parseExpr <* reserved "of") <*> cases
+  , Lam  <$> (lambda *> many parseName) <*> (symbol "->" *> parseExpr)
+  , parseAtomic `chainl1` pure Ap
   ]
 
 equals :: TokenParsing m => m ()
@@ -42,21 +47,26 @@ equals = void (symbolic '=')
 
 parseAtomic :: (Monad m, TokenParsing m) => m CoreExpr
 parseAtomic = choice
-  [ Num . fromIntegral <$> Token.integer
-  , Var                <$> parseName
+  [ Num <$> int
+  , Var <$> parseName
+  , parens parseExpr
   ]
 
 bindings :: (Monad m, TokenParsing m) => m (NonEmpty (Name, CoreExpr))
-bindings = go `sepByNonEmpty` (symbolic ',') where
+bindings = go `sepByNonEmpty` (symbolic ';') where
   go = liftA2 (,) parseName (equals *> parseExpr)
+
+cases :: (Monad m, TokenParsing m) => m (NonEmpty (Int, [Name], CoreExpr))
+cases = go `sepByNonEmpty` (symbolic ';') where
+  go = liftA3 (,,) int (many parseName) (symbol "->" *> parseExpr)
 
 parseRec :: (Monad m, TokenParsing m) => m Rec
 parseRec = choice [ Non <$ reserved "let"
                   , Rec <$ reserved "letrec"
                   ]
 
-lambda :: CharParsing m => m Char
-lambda = oneOf "\\λ"
+lambda :: TokenParsing m => m Char
+lambda = token (oneOf "\\λ")
 
 parseProgram :: (Monad m, TokenParsing m) => m CoreProgram
 parseProgram = toplevel (runUnlined (Program <$> parseDefn `sepEndByNonEmpty` newline))
