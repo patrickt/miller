@@ -22,7 +22,7 @@ executable miller
   other-modules:       Miller.Expr
                      , Miller.Parser
                      , Miller.Stats
---                     , Miller.TI
+                     , Miller.TI
                      , Miller.Heap
   build-depends:       base >= 4.7 && < 5
                      , containers

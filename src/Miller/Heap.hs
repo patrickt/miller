@@ -45,3 +45,4 @@ lookup (Addr a) h = IM.lookup a (entries h)
 
 addresses :: Heap a -> [Addr]
 addresses = fmap Addr . IM.keys . entries
+

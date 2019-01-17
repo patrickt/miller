@@ -1,5 +1,5 @@
 {-# LANGUAGE ConstraintKinds, FlexibleContexts, FlexibleInstances, LambdaCase, OverloadedLists, OverloadedStrings,
-             TypeApplications #-}
+             TypeApplications, BlockArguments #-}
 
 module Miller.TI where
 
@@ -38,6 +38,7 @@ data Fatal
   | EmptyStack
   | AddrNotFound Addr
   | NumAppliedAsFunction Int
+  | ExpectedSCPly Node
 
 type Machine sig m
   = ( Member (State Stack)   sig
@@ -79,10 +80,29 @@ step = do
     Leaf n  -> throwError (NumAppliedAsFunction n)
     Ply a b -> modify @Stack (a:)
     Super name args body -> do
-      bindings <- zip args <$> _getArgs
-      (newHeap, result) <- _instantiate body bindings
+      bindings <- zip args <$> pendingArguments
+      (newHeap, result) <- instantiate body bindings
       put @Stack (result : drop (succ (length args)) stack)
       put @TIHeap newHeap
+
+pendingArguments :: Machine sig m => m [Addr]
+pendingArguments = do
+  pending <- tail <$> get @Stack
+  forM pending $ \a -> do
+    res <- lookupHeap a
+    case res of
+      Ply _ arg -> pure a
+      _         -> throwError (ExpectedSCPly res)
+      
+instantiate :: Machine sig m => CoreExpr -> [(Name, Addr)] -> m (TIHeap, Addr)
+instantiate ex env = case ex of
+  Num i  -> gets (alloc (Leaf i))
+  Ap f x -> do
+    (h, n) <- instantiate f env
+    put @TIHeap h
+    (_, m) <- instantiate x env
+    gets (alloc (Ply n m))
+  
 
 lookupHeap :: Machine sig m => Addr -> m Node
 lookupHeap a = gets (Heap.lookup a) >>= maybe (throwError (AddrNotFound a)) pure
