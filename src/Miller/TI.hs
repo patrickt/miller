@@ -1,6 +1,5 @@
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE BlockArguments, ConstraintKinds, FlexibleContexts, FlexibleInstances, LambdaCase, OverloadedLists,
-             OverloadedStrings, TupleSections, TypeApplications #-}
+             OverloadedStrings, RecordWildCards, TupleSections, TypeApplications #-}
 
 module Miller.TI where
 
@@ -13,16 +12,24 @@ import           Control.Effect.Writer
 import           Data.Foldable
 import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
-import           Data.Text.Prettyprint.Doc
+import           Data.Text.Prettyprint.Doc as Pretty
 import           Miller.Expr
-import           Miller.Heap as Heap
+import           Miller.Parser (parseProgram)
 import           Miller.Stats
+import           Miller.TI.Heap as Heap
+import qualified Text.Trifecta as Parser
 
 data Node
   = Ply Addr Addr
   | Super Name [Name] CoreExpr
   | Leaf Int
     deriving (Eq, Show)
+
+instance Pretty Node where
+  pretty = \case
+    Ply f x      -> pretty f <> "." <> pretty x
+    Super n xs _ -> pretty n <> Pretty.tupled (pretty <$> xs)
+    Leaf n       -> pretty n
 
 isDataNode :: Node -> Bool
 isDataNode (Leaf _) = True
@@ -41,6 +48,7 @@ data Fatal
   | EmptyStack
   | AddrNotFound Addr
   | NumAppliedAsFunction Int
+  | InfiniteLoop String
   | ExpectedSCPly Node
     deriving (Eq, Show)
 
@@ -83,7 +91,7 @@ instance Pretty a => Pretty (Result a) where
                             ]
 
 assemble :: (Stack, (TIHeap, (Globals, (Stats, Either Fatal a)))) -> Result a
-assemble (a, (b, (c, (d, e)))) = Result a b c d e
+assemble (_stack, (b, (c, (d, e)))) = Result _stack b c d e
 
 runTemplate :: CoreProgram -> Doc ()
 runTemplate
@@ -98,6 +106,11 @@ runTemplate
   . runError @Fatal
   . compile
 
+testMiller :: String -> Doc ()
+testMiller s = case Parser.parseString parseProgram mempty s of
+  Parser.Success a -> runTemplate a
+  Parser.Failure f -> "result: " <> viaShow (Parser._errDoc f)
+
 buildInitialHeap :: Machine sig m => CoreProgram -> m ()
 buildInitialHeap defns = for_ (unProgram defns) $ \(Defn name args body) -> do
   (newHeap, addr) <- gets (Heap.alloc (Super name args body))
@@ -105,12 +118,16 @@ buildInitialHeap defns = for_ (unProgram defns) $ \(Defn name args body) -> do
   modify @Globals (HM.insert name addr)
 
 preludeDefs :: CoreProgram
-preludeDefs = [Defn "identity" ["x"] (Var "x")]
+preludeDefs = [ Defn "I" ["x"] (Var "x")
+              , Defn "K" ["y", "z"] (Var "y")
+              , Defn "S" ["a", "b", "c"] ((Var "a" <> Var "c") <> (Var "b" <> Var "c"))
+              , Defn "D" ["f", "g", "h"] (Var "f" <> (Var "g" <> Var "h"))]
 
 compile :: Machine sig m => CoreProgram -> m ()
 compile program = do
   buildInitialHeap (program <> preludeDefs)
   gets @Globals (HM.lookup "main") >>= maybe (throwError (NotDefined "main")) (put @Stack . pure)
+  eval
 
 eval :: Machine sig m => m ()
 eval = do
@@ -127,10 +144,16 @@ step = do
     Leaf n                -> throwError (NumAppliedAsFunction n)
     Ply a _b              -> modify @Stack (a:)
     Super _name args body -> do
-      bindings <- zip args <$> pendingArguments
-      (newHeap, result) <- instantiate body bindings
-      put @Stack (result : drop (succ (length args)) stack)
+      traceShowM (_name, args, body)
+      curBindings <- gets @Globals HM.toList
+      newBindings <- zip args <$> pendingArguments
+      (newHeap, result) <- instantiate body (curBindings <> newBindings)
+
+      let newStack = result : drop (succ (length args)) stack
+
+      put @Stack newStack
       put @TIHeap newHeap
+
 
 pendingArguments :: Machine sig m => m [Addr]
 pendingArguments = do
@@ -145,13 +168,14 @@ instantiate :: Machine sig m => CoreExpr -> [(Name, Addr)] -> m (TIHeap, Addr)
 instantiate ex env = case ex of
   Num i  -> gets (alloc (Leaf i))
   Var n  -> do
-    addr <- gets @Globals (HM.lookup n) >>= maybeM (notDefined n)
+    addr <- maybeM (notDefined n) (Prelude.lookup n env)
     heap <- get
     pure (heap, addr)
   Ap f x -> do
-    (h, n) <- instantiate f env
-    put @TIHeap h
-    (_, m) <- instantiate x env
+    (h1, n) <- instantiate f env
+    put @TIHeap h1
+    (h2, m) <- instantiate x env
+    put @TIHeap h2
     gets (alloc (Ply n m))
   _ -> error ("instantiate: got " <> show ex)
 

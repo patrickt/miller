@@ -19,7 +19,7 @@ import qualified Text.Parser.Token.Highlight as HL
 import Miller.Expr
 
 identStyle :: (Alternative m, CharParsing m) => Token.IdentifierStyle m
-identStyle = IdentifierStyle "miller" letter (alphaNum <|> char '\'') kws HL.Identifier HL.ReservedIdentifier where
+identStyle = IdentifierStyle "identifier" letter (alphaNum <|> char '\'') kws HL.Identifier HL.ReservedIdentifier where
   kws = ["let", "letrec", "in", "case"]
 
 int :: (Monad m, TokenParsing m) => m Int

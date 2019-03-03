@@ -1,5 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-module Miller.Heap
+module Miller.TI.Heap
   ( Heap
   , Addr
   , count
@@ -11,13 +11,15 @@ module Miller.Heap
   , addresses
   ) where
 
-import Prelude hiding (lookup)
 import Doors
+import Prelude hiding (lookup)
 
+import           Data.Function
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IM
 import           Data.Stream.Infinite (Stream (..))
 import qualified Data.Stream.Infinite as Stream
+import qualified Data.Text.Prettyprint.Doc as Pretty
 
 newtype Addr = Addr Int deriving (Eq, Lower)
 
@@ -30,8 +32,14 @@ data Heap a = Heap
   , entries :: IntMap a
   }
 
+instance Eq a => Eq (Heap a) where (==) = (==) `on` entries
 instance Show a => Show (Heap a) where show = show . entries
-instance Show a => Pretty (Heap a) where pretty = viaShow
+
+instance Pretty a => Pretty (Heap a) where
+  pretty (Heap _ _ e) = do
+    let pair (a, b) = pretty a <> "=" <> pretty b
+    let elements    = fmap pair (IM.toList e)
+    Pretty.list elements
 
 instance Lower (Heap a) where lowerBound = initial
 
