@@ -7,16 +7,18 @@ import Doors
 
 import           Control.Effect
 import           Control.Effect.Error
+import           Control.Effect.Reader
 import           Control.Effect.State
 import           Control.Effect.Writer
 import           Data.Foldable
-import           Data.HashMap.Strict (HashMap)
-import qualified Data.HashMap.Strict as HM
+
 import           Data.Text.Prettyprint.Doc as Pretty
 import           Miller.Expr
 import           Miller.Parser (parseProgram)
 import           Miller.Stats
-import           Miller.TI.Heap as Heap
+import qualified Miller.TI.Env as Env
+import qualified Miller.TI.Heap as Heap
+import           Miller.TI.Heap (Addr)
 import qualified Text.Trifecta as Parser
 
 data Node
@@ -35,11 +37,10 @@ isDataNode :: Node -> Bool
 isDataNode (Leaf _) = True
 isDataNode _        = False
 
-type TIHeap = Heap Node
+type Env  = Env.Env Addr
+type Heap = Heap.Heap Node
 
 type Stack = [Addr]
-
-type Globals = HashMap Name Addr
 
 data Dump = Dump
 
@@ -48,7 +49,7 @@ data Fatal
   | EmptyStack
   | AddrNotFound Addr
   | NumAppliedAsFunction Int
-  | InfiniteLoop String
+  | InfiniteLoop CoreExpr
   | ExpectedSCPly Node
     deriving (Eq, Show)
 
@@ -62,20 +63,20 @@ notDefined :: (Member (Error Fatal) sig, Carrier sig m) => Name -> m a
 notDefined = throwError . NotDefined
 
 type Machine sig m
-  = ( Member (State Stack)   sig
-    , Member (State TIHeap)  sig
-    , Member (State Dump)    sig
-    , Member (State Globals) sig
-    , Member (Writer Stats)  sig
-    , Member (Error Fatal)   sig
+  = ( Member (State Stack)  sig
+    , Member (State Heap) sig
+    , Member (State Dump)   sig
+    , Member (Reader Env) sig
+    , Member (Writer Stats) sig
+    , Member (Error Fatal)  sig
+    , Effect sig
     , Carrier sig m
     , Monad m
     )
 
 data Result a = Result
   { _stack   :: Stack
-  , _heap    :: TIHeap
-  , _globals :: Globals
+  , _heap    :: Heap
   , _stats   :: Stats
   , _result  :: Either Fatal a
 
@@ -85,13 +86,12 @@ instance Pretty a => Pretty (Result a) where
   pretty Result {..} = vcat [ "result:  " <> pretty _result
                             , "stack:   " <> pretty _stack
                             , "heap:    " <> pretty _heap
-                            , "globals: " <> viaShow _globals
                             , "***"
                             , pretty _stats
                             ]
 
-assemble :: (Stack, (TIHeap, (Globals, (Stats, Either Fatal a)))) -> Result a
-assemble (_stack, (b, (c, (d, e)))) = Result _stack b c d e
+assemble :: (Stack, (Heap, (Stats, Either Fatal a))) -> Result a
+assemble (_stack, (_heap, (_stats, _result))) = Result {..}
 
 runTemplate :: CoreProgram -> Doc ()
 runTemplate
@@ -99,9 +99,9 @@ runTemplate
   . assemble
   . run
   . runState @Stack lowerBound
-  . runState @TIHeap lowerBound
+  . runState @Heap lowerBound
   . evalState Dump
-  . runState @Globals mempty
+  . runReader @Env lowerBound
   . runWriter @Stats
   . runError @Fatal
   . compile
@@ -111,11 +111,13 @@ testMiller s = case Parser.parseString parseProgram mempty s of
   Parser.Success a -> runTemplate a
   Parser.Failure f -> "result: " <> viaShow (Parser._errDoc f)
 
-buildInitialHeap :: Machine sig m => CoreProgram -> m ()
-buildInitialHeap defns = for_ (unProgram defns) $ \(Defn name args body) -> do
-  (newHeap, addr) <- gets (Heap.alloc (Super name args body))
-  put @TIHeap newHeap
-  modify @Globals (HM.insert name addr)
+buildInitialHeap :: Machine sig m => CoreProgram -> m Env
+buildInitialHeap defns = execState @Env mempty $ do
+  for_ (unProgram defns) $ \(Defn name args body) -> do
+    (newHeap, addr) <- gets (Heap.alloc (Super name args body))
+    put @Heap newHeap
+    modify (Env.insert name addr)
+
 
 preludeDefs :: CoreProgram
 preludeDefs = [ Defn "I" ["x"] (Var "x")
@@ -123,11 +125,12 @@ preludeDefs = [ Defn "I" ["x"] (Var "x")
               , Defn "S" ["a", "b", "c"] ((Var "a" <> Var "c") <> (Var "b" <> Var "c"))
               , Defn "D" ["f", "g", "h"] (Var "f" <> (Var "g" <> Var "h"))]
 
-compile :: Machine sig m => CoreProgram -> m ()
+compile :: Machine sig m => CoreProgram -> m Env
 compile program = do
-  buildInitialHeap (program <> preludeDefs)
-  gets @Globals (HM.lookup "main") >>= maybe (throwError (NotDefined "main")) (put @Stack . pure)
-  eval
+  globs <- buildInitialHeap (program <> preludeDefs)
+  local (const globs) $ do
+    asks (Env.lookup "main") >>= maybe (throwError (NotDefined "main")) (put @Stack . pure)
+    eval *> ask
 
 eval :: Machine sig m => m ()
 eval = do
@@ -144,16 +147,13 @@ step = do
     Leaf n                -> throwError (NumAppliedAsFunction n)
     Ply a _b              -> modify @Stack (a:)
     Super _name args body -> do
-      traceShowM (_name, args, body)
-      curBindings <- gets @Globals HM.toList
-      newBindings <- zip args <$> pendingArguments
-      (newHeap, result) <- instantiate body (curBindings <> newBindings)
+      newBindings <- Env.fromBindings args <$> pendingArguments
 
+      (newHeap, result) <- local (<> newBindings) (instantiate body)
       let newStack = result : drop (succ (length args)) stack
 
       put @Stack newStack
-      put @TIHeap newHeap
-
+      put @Heap newHeap
 
 pendingArguments :: Machine sig m => m [Addr]
 pendingArguments = do
@@ -164,19 +164,19 @@ pendingArguments = do
       Ply _ arg -> pure arg
       _         -> throwError (ExpectedSCPly res)
 
-instantiate :: Machine sig m => CoreExpr -> [(Name, Addr)] -> m (TIHeap, Addr)
-instantiate ex env = case ex of
-  Num i  -> gets (alloc (Leaf i))
+instantiate :: Machine sig m => CoreExpr -> m (Heap, Addr)
+instantiate ex = case ex of
+  Num i  -> gets (Heap.alloc (Leaf i))
   Var n  -> do
-    addr <- maybeM (notDefined n) (Prelude.lookup n env)
+    addr <- asks (Env.lookup n) >>= maybeM (notDefined n)
     heap <- get
     pure (heap, addr)
   Ap f x -> do
-    (h1, n) <- instantiate f env
-    put @TIHeap h1
-    (h2, m) <- instantiate x env
-    put @TIHeap h2
-    gets (alloc (Ply n m))
+    (h1, n) <- instantiate f
+    put @Heap h1
+    (h2, m) <- instantiate x
+    put @Heap h2
+    gets (Heap.alloc (Ply n m))
   _ -> error ("instantiate: got " <> show ex)
 
 

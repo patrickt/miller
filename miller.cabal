@@ -39,6 +39,7 @@ library
                      , Miller.Parser
                      , Miller.Stats
                      , Miller.TI
+                     , Miller.TI.Env
                      , Miller.TI.Heap
 
 
