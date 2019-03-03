@@ -5,20 +5,21 @@ module Miller.TI where
 
 import Doors
 
-import           Control.Effect
-import           Control.Effect.Error
-import           Control.Effect.Reader
-import           Control.Effect.State
-import           Control.Effect.Writer
-import           Data.Foldable
+import Control.Effect
+import Control.Effect.Error
+import Control.Effect.Reader
+import Control.Effect.State
+import Control.Effect.Writer
+import Data.Foldable
 
 import           Data.Text.Prettyprint.Doc as Pretty
 import           Miller.Expr
 import           Miller.Parser (parseProgram)
-import           Miller.Stats
+import           Miller.Stats (Stats)
+import qualified Miller.Stats as Stats
 import qualified Miller.TI.Env as Env
-import qualified Miller.TI.Heap as Heap
 import           Miller.TI.Heap (Addr)
+import qualified Miller.TI.Heap as Heap
 import qualified Text.Trifecta as Parser
 
 data Node
@@ -49,6 +50,7 @@ data Fatal
   | EmptyStack
   | AddrNotFound Addr
   | NumAppliedAsFunction Int
+  | TooFewArguments Name
   | InfiniteLoop CoreExpr
   | ExpectedSCPly Node
     deriving (Eq, Show)
@@ -75,10 +77,10 @@ type Machine sig m
     )
 
 data Result a = Result
-  { _stack   :: Stack
-  , _heap    :: Heap
-  , _stats   :: Stats
-  , _result  :: Either Fatal a
+  { _stack  :: Stack
+  , _heap   :: Heap
+  , _stats  :: Stats
+  , _result :: Either Fatal a
 
   } deriving (Show)
 
@@ -111,11 +113,17 @@ testMiller s = case Parser.parseString parseProgram mempty s of
   Parser.Success a -> runTemplate a
   Parser.Failure f -> "result: " <> viaShow (Parser._errDoc f)
 
+alloc :: Machine sig m => Node -> m Addr
+alloc n = do
+  (newHeap, addr) <- gets (Heap.alloc n)
+  put @Heap newHeap
+  Stats.allocation
+  pure addr
+
 buildInitialHeap :: Machine sig m => CoreProgram -> m Env
 buildInitialHeap defns = execState @Env mempty $ do
   for_ (unProgram defns) $ \(Defn name args body) -> do
-    (newHeap, addr) <- gets (Heap.alloc (Super name args body))
-    put @Heap newHeap
+    addr <- alloc (Super name args body)
     modify (Env.insert name addr)
 
 
@@ -136,7 +144,7 @@ eval :: Machine sig m => m ()
 eval = do
   final <- isFinal
   unless final $ do
-    tell (Stats 1 0)
+    Stats.step
     step *> eval
 
 step :: Machine sig m => m ()
@@ -146,14 +154,15 @@ step = do
   lookupHeap (head stack) >>= \case
     Leaf n                -> throwError (NumAppliedAsFunction n)
     Ply a _b              -> modify @Stack (a:)
-    Super _name args body -> do
+    Super name args body -> do
+      unless (length args < length stack) (throwError (TooFewArguments name))
+
       newBindings <- Env.fromBindings args <$> pendingArguments
 
-      (newHeap, result) <- local (<> newBindings) (instantiate body)
+      result <- local (<> newBindings) (instantiate body)
       let newStack = result : drop (succ (length args)) stack
 
       put @Stack newStack
-      put @Heap newHeap
 
 pendingArguments :: Machine sig m => m [Addr]
 pendingArguments = do
@@ -164,19 +173,14 @@ pendingArguments = do
       Ply _ arg -> pure arg
       _         -> throwError (ExpectedSCPly res)
 
-instantiate :: Machine sig m => CoreExpr -> m (Heap, Addr)
+instantiate :: Machine sig m => CoreExpr -> m Addr
 instantiate ex = case ex of
-  Num i  -> gets (Heap.alloc (Leaf i))
-  Var n  -> do
-    addr <- asks (Env.lookup n) >>= maybeM (notDefined n)
-    heap <- get
-    pure (heap, addr)
+  Num i  -> alloc (Leaf i)
+  Var n  -> asks (Env.lookup n) >>= maybeM (notDefined n)
   Ap f x -> do
-    (h1, n) <- instantiate f
-    put @Heap h1
-    (h2, m) <- instantiate x
-    put @Heap h2
-    gets (Heap.alloc (Ply n m))
+    n <- instantiate f
+    m <- instantiate x
+    alloc (Ply n m)
   _ -> error ("instantiate: got " <> show ex)
 
 
