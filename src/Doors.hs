@@ -4,6 +4,7 @@ module Doors
   ) where
 
 import Control.Monad as X
+import Data.Coerce as X
 import Data.Maybe as X
 import Data.Semilattice.Lower as X
 import Data.Text.Prettyprint.Doc as X (Pretty (..), viaShow)

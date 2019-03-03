@@ -11,6 +11,7 @@ import Control.Effect.Reader
 import Control.Effect.State
 import Control.Effect.Writer
 import Data.Foldable
+import Data.Semigroup (Max (..))
 
 import           Data.Text.Prettyprint.Doc as Pretty
 import           Miller.Expr
@@ -143,12 +144,11 @@ compile program = do
 eval :: Machine sig m => m ()
 eval = do
   final <- isFinal
-  unless final $ do
-    Stats.step
-    step *> eval
+  unless final (step *> eval)
 
 step :: Machine sig m => m ()
 step = do
+  Stats.step
   stack <- get @Stack
   when (null stack) (throwError EmptyStack)
   lookupHeap (head stack) >>= \case
@@ -159,9 +159,9 @@ step = do
 
       newBindings <- Env.fromBindings args <$> pendingArguments
 
-      result <- local (<> newBindings) (instantiate body)
-      let newStack = result : drop (succ (length args)) stack
+      result <- local (Env.union newBindings) (instantiate body)
 
+      let newStack = result : drop (succ (length args)) stack
       put @Stack newStack
 
 pendingArguments :: Machine sig m => m [Addr]
@@ -174,14 +174,22 @@ pendingArguments = do
       _         -> throwError (ExpectedSCPly res)
 
 instantiate :: Machine sig m => CoreExpr -> m Addr
-instantiate ex = case ex of
-  Num i  -> alloc (Leaf i)
-  Var n  -> asks (Env.lookup n) >>= maybeM (notDefined n)
-  Ap f x -> do
-    n <- instantiate f
-    m <- instantiate x
-    alloc (Ply n m)
-  _ -> error ("instantiate: got " <> show ex)
+instantiate ex = do
+  let go = \case
+        Num i  -> alloc (Leaf i)
+        Var n  -> asks (Env.lookup n) >>= maybeM (notDefined n)
+        Ap f x -> do
+          Stats.reduction
+          asks @Word Max >>= tell
+          n <- local @Word succ (go f)
+          m <- local @Word succ (go x)
+          alloc (Ply n m)
+        _ -> error ("instantiate: got " <> show ex)
+
+  (water, res) <- runReader @Word 0 . runWriter @(Max Word) $ go ex
+  Stats.depth water
+  pure res
+
 
 
 lookupHeap :: Machine sig m => Addr -> m Node
