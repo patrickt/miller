@@ -1,0 +1,3 @@
+:seti -fbreak-on-error
+:set -Wwarn
+:set prompt "\ESC[1;36m\STXλ \ESC[m\STX"

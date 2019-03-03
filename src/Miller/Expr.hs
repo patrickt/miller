@@ -4,7 +4,6 @@
 
 module Miller.Expr where
 
-import Data.Foldable hiding (toList)
 import Data.Functor.Foldable
 import Data.Functor.Foldable.TH
 import Data.List.NonEmpty (NonEmpty)
@@ -84,4 +83,3 @@ prog :: CoreProgram
 prog = Program [ Defn "main" [] (Ap (Var "double") (Num 21))
                , Defn "double" ["x"] (Ap (Ap (Var "add") (Var "x")) (Var "x"))
                ]
-
