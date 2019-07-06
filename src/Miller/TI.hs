@@ -10,7 +10,6 @@ import Control.Effect.Error
 import Control.Effect.Reader
 import Control.Effect.State
 import Control.Effect.Writer
-import Data.Foldable
 import Data.Semigroup (Max (..))
 
 import           Data.Text.Prettyprint.Doc as Pretty
@@ -27,6 +26,7 @@ data Node
   = Ply Addr Addr
   | Super Name [Name] CoreExpr
   | Leaf Int
+  | Indirect Addr
     deriving (Eq, Show)
 
 instance Pretty Node where
@@ -34,6 +34,7 @@ instance Pretty Node where
     Ply f x      -> pretty f <> "." <> pretty x
     Super n xs _ -> pretty n <> Pretty.tupled (pretty <$> xs)
     Leaf n       -> pretty n
+    Indirect a   -> "?" <> pretty a
 
 isDataNode :: Node -> Bool
 isDataNode (Leaf _) = True
@@ -154,6 +155,7 @@ step = do
   lookupHeap (head stack) >>= \case
     Leaf n                -> throwError (NumAppliedAsFunction n)
     Ply a _b              -> modify @Stack (a:)
+    Indirect addr         -> modify @Stack tail *> modify @Stack (addr:)
     Super name args body -> do
       unless (length args < length stack) (throwError (TooFewArguments name))
 
@@ -174,21 +176,28 @@ pendingArguments = do
       _         -> throwError (ExpectedSCPly res)
 
 instantiate :: Machine sig m => CoreExpr -> m Addr
-instantiate ex = do
-  let go = \case
+instantiate ex =
+  let go it = local @Word succ $ case it of
         Num i  -> alloc (Leaf i)
         Var n  -> asks (Env.lookup n) >>= maybeM (notDefined n)
+        Let Non bindings bod -> introduce bindings bod
+        Let Rec bindings bod -> do
+          oldenv <- ask
+          let prealloc n = Env.insert (fst n) Heap.unallocated
+          let augenv = foldr prealloc oldenv bindings
+          local (Env.union augenv) $ introduce bindings (Let Non bindings bod)
         Ap f x -> do
           Stats.reduction
           asks @Word Max >>= tell
-          n <- local @Word succ (go f)
-          m <- local @Word succ (go x)
-          alloc (Ply n m)
-        _ -> error ("instantiate: got " <> show ex)
+          alloc =<< Ply <$> go f <*> go x
 
-  (water, res) <- runReader @Word 0 . runWriter @(Max Word) $ go ex
-  Stats.depth water
-  pure res
+      introduce bindings bod = do
+        newenv <- Env.fromList <$> traverse (traverse go) bindings
+        local (Env.union newenv) (go bod)
+  in do
+    (water, res) <- runReader @Word 0 . runWriter @(Max Word) $ go ex
+    Stats.depth water
+    pure res
 
 
 

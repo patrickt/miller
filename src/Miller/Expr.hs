@@ -14,7 +14,7 @@ import GHC.Exts (IsList (..))
 import Data.Hashable
 
 newtype Name = Name { unName :: Text }
-  deriving newtype (Eq, IsString, Pretty, Show, Hashable)
+  deriving newtype (Eq, IsString, Pretty, Show, Ord, Hashable)
 
 data Rec = Non | Rec deriving (Eq, Show)
 

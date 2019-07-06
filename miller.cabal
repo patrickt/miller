@@ -17,17 +17,17 @@ common shared
   default-language: Haskell2010
   default-extensions: FlexibleContexts
   build-depends:    base >= 4.7 && < 5
-                  , containers
-                  , fused-effects
-                  , generic-monoid
-                  , hashable
-                  , parsers
-                  , prettyprinter
-                  , recursion-schemes
-                  , semilattices
-                  , streams
-                  , text
-                  , trifecta
+                  , containers       ^>= 0.6.1
+                  , fused-effects ^>= 0.4.0.0
+                  , generic-monoid ^>= 0.1.0.0
+                  , hashable ^>= 1.2.7
+                  , parsers ^>= 0.12.9
+                  , prettyprinter ^>= 1.2.1
+                  , recursion-schemes ^>= 5.1
+                  , semilattices ^>= 0.0.0.3
+                  , streams ^>= 3.3
+                  , text ^>= 1.2.3.1
+                  , trifecta >= 2
                   , unordered-containers
 
 library

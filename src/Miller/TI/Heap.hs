@@ -1,7 +1,9 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, OverloadedStrings #-}
+
 module Miller.TI.Heap
   ( Heap
   , Addr
+  , unallocated
   , count
   , initial
   , alloc
@@ -22,6 +24,9 @@ import qualified Data.Stream.Infinite as Stream
 import qualified Data.Text.Prettyprint.Doc as Pretty
 
 newtype Addr = Addr Int deriving (Eq, Lower)
+
+unallocated :: Addr
+unallocated = Addr (negate 1)
 
 instance Show Addr where show (Addr a) = '#' : show a
 instance Pretty Addr where pretty = viaShow

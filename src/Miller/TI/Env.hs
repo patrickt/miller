@@ -1,4 +1,4 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, TypeFamilies, OverloadedStrings #-}
 
 module Miller.TI.Env
   ( Env
@@ -6,6 +6,7 @@ module Miller.TI.Env
   , insert
   , union
   , fromBindings
+  , fromList
   ) where
 
 import Prelude hiding (lookup)
@@ -24,6 +25,9 @@ instance Pretty a => Pretty (Env a) where
     let pair (a, b) = pretty a <> "=" <> pretty b
     let elements    = fmap pair (HM.toList e)
     Pretty.list elements
+
+fromList :: Foldable f => f (Name, a) -> Env a
+fromList = Env . HM.fromList . toList
 
 union :: Env a -> Env a -> Env a
 union (Env a) (Env b) = Env (HM.union a b)
