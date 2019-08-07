@@ -33,14 +33,15 @@ common shared
 library
   import:              shared
   hs-source-dirs:      src
-  ghc-options:         -Werror -Wall
+  ghc-options:         -Wall
   exposed-modules:     Doors
                      , Miller.Expr
                      , Miller.Parser
-                     , Miller.Stats
-                     , Miller.TI
-                     , Miller.TI.Env
-                     , Miller.TI.Heap
+                     -- , Miller.Stats
+                     -- , Miller.TI
+                     -- , Miller.TI.Env
+                     -- , Miller.TI.Heap
+                     -- , Miller.Typecheck
 
 
 test-suite test

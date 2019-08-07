@@ -1,2 +1,0 @@
-module Miller.Token where
-

@@ -1,20 +1,14 @@
-{-# LANGUAGE OverloadedStrings, OverloadedLists #-}
+{-# LANGUAGE OverloadedLists, OverloadedStrings #-}
 
 module Miller.Parser where
 
 import           Control.Applicative
 import           Control.Monad
-import Data.List.NonEmpty
--- import qualified Data.Text as T
--- import           GHC.Exts
--- import           Text.Parser.Char
--- import           Text.Parser.Token
--- import           Text.Parser.Token.Style (haskellIdents)
--- import           Text.Trifecta
-import Data.Text (Text)
-import Text.Parser.Token as Token
-import Text.Trifecta
+import           Data.List.NonEmpty
+import           Data.Text (Text)
+import           Text.Parser.Token as Token
 import qualified Text.Parser.Token.Highlight as HL
+import           Text.Trifecta
 
 import Miller.Expr
 
@@ -23,7 +17,7 @@ identStyle = IdentifierStyle "identifier" letter (alphaNum <|> char '\'') kws HL
   kws = ["let", "letrec", "in", "case"]
 
 int :: (Monad m, TokenParsing m) => m Int
-int = fromIntegral <$> Token.integer
+int = fromIntegral <$> Token.intege
 
 reserved :: (Monad m, TokenParsing m) => Text -> m ()
 reserved = Token.reserveText identStyle
