@@ -37,6 +37,7 @@ library
   exposed-modules:     Doors
                      , Miller.Expr
                      , Miller.Parser
+                     , Miller.Pretty
                      -- , Miller.Stats
                      -- , Miller.TI
                      -- , Miller.TI.Env
@@ -50,3 +51,5 @@ test-suite test
   type:           exitcode-stdio-1.0
   main-is:        Main.hs
   build-depends:  miller
+                , trifecta
+                , hedgehog >= 1

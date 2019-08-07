@@ -4,8 +4,6 @@
 
 module Miller.Expr where
 
-import Data.Functor.Foldable
-import Data.Functor.Foldable.TH
 import Data.List.NonEmpty (NonEmpty)
 import Data.String
 import Data.Text (Text)
@@ -32,20 +30,18 @@ data Expr a
   | Lam [a] (Expr a)
     deriving (Eq, Show, Functor)
 
-makeBaseFunctor ''Expr
-
 instance Semigroup (Expr a) where
   (<>) = Ap
 
-instance Pretty CoreExpr where
-  pretty = cata $ \case
-    VarF n         -> pretty n
-    NumF i         -> pretty i
-    ApF f x        -> parens (f <+> x)
-    LetF r binds e -> parens (pretty r <+> prettyDefns (toList binds) <+> "in" <+> e)
-    _              -> "unimplemented"
-    where
-      prettyDefns = vsep . fmap (\(a, b) -> pretty a <+> "=" <+> b)
+-- instance Pretty CoreExpr where
+--   pretty = cata $ \case
+--     VarF n         -> pretty n
+--     NumF i         -> pretty i
+--     ApF f x        -> parens (f <+> x)
+--     LetF r binds e -> parens (pretty r <+> prettyDefns (toList binds) <+> "in" <+> e)
+--     _              -> "unimplemented"
+--     where
+--       prettyDefns = vsep . fmap (\(a, b) -> pretty a <+> "=" <+> b)
 
 isAtomic :: Expr a -> Bool
 isAtomic = \case
@@ -59,9 +55,6 @@ data Defn a = Defn Name [a] (Expr a) deriving (Eq, Show, Functor)
 
 type CoreDefn = Defn Name
 
-instance Pretty CoreDefn where
-  pretty (Defn n vars e) = pretty n <+> hsep (pretty <$> vars) <+> "=" <+> pretty e
-
 newtype Program a = Program { unProgram :: NonEmpty (Defn a) }
   deriving newtype (Eq, Show, Semigroup)
   deriving stock (Functor)
@@ -73,8 +66,8 @@ instance IsList (Program a) where
 
 type CoreProgram = Program Name
 
-instance Pretty CoreProgram where
-  pretty (Program a) = vsep (toList (pretty <$> a))
+-- instance Pretty CoreProgram where
+--   pretty (Program a) = vsep (toList (pretty <$> a))
 
 xPlusY :: CoreExpr
 xPlusY = Ap (Ap (Var "+") (Var "x")) (Var "y")

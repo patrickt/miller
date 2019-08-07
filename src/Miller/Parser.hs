@@ -1,6 +1,9 @@
 {-# LANGUAGE OverloadedLists, OverloadedStrings #-}
 
-module Miller.Parser where
+module Miller.Parser
+  ( parseExpr
+  , keywords
+  ) where
 
 import           Control.Applicative
 import           Control.Monad
@@ -12,12 +15,15 @@ import           Text.Trifecta
 
 import Miller.Expr
 
+keywords :: [Text]
+keywords = ["let", "letrec", "in", "case"]
+
 identStyle :: (Alternative m, CharParsing m) => Token.IdentifierStyle m
 identStyle = IdentifierStyle "identifier" letter (alphaNum <|> char '\'') kws HL.Identifier HL.ReservedIdentifier where
   kws = ["let", "letrec", "in", "case"]
 
 int :: (Monad m, TokenParsing m) => m Int
-int = fromIntegral <$> Token.intege
+int = fromIntegral <$> Token.integer
 
 reserved :: (Monad m, TokenParsing m) => Text -> m ()
 reserved = Token.reserveText identStyle
@@ -67,26 +73,3 @@ parseProgram = toplevel (runUnlined (Program <$> parseDefn `sepEndByNonEmpty` ne
 
 toplevel :: (Monad m, TokenParsing m) => m a -> m a
 toplevel f = f <* whiteSpace <* eof
-
--- parseProgram :: Parser CoreProgram
--- parseProgram = Program <$> parseDefn `sepEndByNonEmpty` newline
-
--- parseDefn :: Parser CoreDefn
--- parseDefn = Defn <$> parseName
---                  <*> many parseName
---                  <*> (token (char '=') *> parseExpr)
-
--- parseAtomic :: Parser CoreExpr
--- parseAtomic = choice
---   [ Num . fromIntegral <$> decimal
---   , Var <$> parseName
---   ] <?> "atomic expression"
-
--- parseComplex :: Parser CoreExpr
--- parseComplex = undefined
-
--- parseExpr :: Parser CoreExpr
--- parseExpr = parseAtomic
-
--- parseName :: Parser Name
--- parseName = Name <$> ident haskellIdents
