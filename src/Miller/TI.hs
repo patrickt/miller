@@ -1,5 +1,5 @@
 {-# LANGUAGE BlockArguments, ConstraintKinds, FlexibleContexts, FlexibleInstances, LambdaCase, OverloadedLists,
-             OverloadedStrings, RecordWildCards, TupleSections, TypeApplications #-}
+             OverloadedStrings, RecordWildCards, TupleSections, TypeApplications, NamedFieldPuns #-}
 
 module Miller.TI where
 
@@ -33,11 +33,10 @@ data TIMachine = TIMachine
   , dump    :: Dump
   , heap    :: Heap Node
   , globals :: Env Addr
-  , stats   :: Stats
   }
 
 instance Lower TIMachine where
-  lowerBound = TIMachine [] Dump lowerBound lowerBound mempty
+  lowerBound = TIMachine [] Dump lowerBound lowerBound
 
 data Node
   = NAp Addr Addr
@@ -45,7 +44,13 @@ data Node
   | NNum Int
     deriving (Eq, Show)
 
+isDataNode :: Node -> Bool
+isDataNode (NNum _) = True
+isDataNode _        = False
+
 type TI sig m = ( Member (State TIMachine) sig
+                , Member (Writer Stats) sig
+                , Effect sig
                 , Carrier sig m
                 )
 
@@ -54,6 +59,47 @@ allocateSC (Expr.Defn name args body) = do
   (new, addr) <- gets (Heap.alloc (NSupercomb name args body) . heap)
   modify (\m -> m { heap = new })
   pure addr
+
+-- Evaluate the loaded program, returning the set of all seen states.
+eval :: TI sig m => m [TIMachine]
+eval = execWriter @[TIMachine] go
+  where
+    go = do
+      curr <- get
+      if isFinal curr
+        then pure ()
+        else do
+          tell @[TIMachine] [curr]
+          step *> Stats.step
+          go
+
+-- Are we in a final (stopped) state?
+isFinal :: TIMachine -> Bool
+isFinal TIMachine{ stack, heap } = case stack of
+  [sole] -> maybe False isDataNode (Heap.lookup sole heap)
+  _      -> False
+
+step :: TI sig m => m ()
+step = do
+  curr <- gets @Stack head
+  gets (Heap.lookup curr . head) >>= \case
+    Num n -> numStep n
+    NAp f x -> apStep f x
+    NSupercomb sc args body -> scStep sc args body
+
+numStep :: TI sig m => m ()
+numStep = error "number applied as a function"
+
+apStep :: TI sig m => Addr -> Addr -> m ()
+apStep f _x = modify (\m -> m { stack = f : stack m })
+
+scStep :: Name -> [Name] -> CoreExpr -> m ()
+scStep name args body = do
+  error "incomplete"
+  modify @Stack (drop (length args + 1))
+
+
+  modify @Stack (result :)
 
 -- compile :: CoreProgram -> TIMachine
 -- compile (Program ps) = run . runState (lowerBound @TIMachine) $ do
