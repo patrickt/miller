@@ -2,6 +2,7 @@
 
 module Miller.Pretty
   ( showExpr
+  , showProgram
   ) where
 
 import Doors
@@ -13,6 +14,15 @@ import Miller.Expr
 
 showExpr :: CoreExpr -> String
 showExpr = Pretty.renderString . layoutSmart defaultLayoutOptions . prettyExpr
+
+showProgram :: CoreProgram -> String
+showProgram = Pretty.renderString . layoutSmart defaultLayoutOptions . prettyProgram
+
+prettyProgram :: CoreProgram -> Doc a
+prettyProgram (Program ps) = vsep . toList $ fmap prettyDefn ps
+
+prettyDefn :: CoreDefn -> Doc a
+prettyDefn (Defn n params b) = pretty n <+> hsep (pretty <$> params) <+> "=" <+> prettyExpr b
 
 -- Snatched from the Semantic definition. Correctly pretty-printing with precedence
 -- is surprisingly, and sometimes depressingly, difficult.

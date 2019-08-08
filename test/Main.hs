@@ -15,7 +15,10 @@ import Miller.Pretty as Pretty
 import Miller.Parser as Parser
 
 parse :: Parser a -> String -> Either String a
-parse p = Trifecta.foldResult (Left . show) Right . parseString p mempty
+parse p = Trifecta.foldResult (Left . show) Right . parseString (p <* eof) mempty
+
+parseFile :: Parser a -> FilePath -> IO (Either String a)
+parseFile p f = Trifecta.foldResult (Left . show) Right <$> Trifecta.parseFromFileEx p f
 
 name :: Gen Name
 name = Name <$> Gen.ensure (`notElem` Parser.keywords) go
@@ -37,6 +40,15 @@ prop_expressions_roundtrip :: Property
 prop_expressions_roundtrip = property $ do
   expr <- forAll additive
   tripping expr Pretty.showExpr (parse parseExpr)
+
+prop_fixtures_roundtrip :: Property
+prop_fixtures_roundtrip = withTests 1 . property $ do
+  let go f = do
+        item <- liftIO (parseFile parseProgram "examples/double.mac") >>= Hedgehog.evalEither
+        tripping item Pretty.showProgram (parse parseProgram)
+
+  go "examples/double.mac"
+  go "examples/pair.mac"
 
 main :: IO ()
 main = void (checkParallel $$(discover))

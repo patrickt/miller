@@ -2,6 +2,7 @@
 
 module Miller.Parser
   ( parseExpr
+  , parseProgram
   , keywords
   ) where
 

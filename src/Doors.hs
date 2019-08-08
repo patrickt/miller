@@ -4,6 +4,7 @@ module Doors
   ) where
 
 import Control.Monad as X
+import Control.Monad.IO.Class as X
 import Data.Coerce as X
 import Data.Foldable as X
 import Data.Maybe as X
