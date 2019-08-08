@@ -5,6 +5,20 @@ module Miller.TI where
 
 import Doors
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 -- import Control.Effect
 -- import Control.Effect.Error
 -- import Control.Effect.Reader
@@ -132,14 +146,6 @@ import Doors
 --   for_ (unProgram defns) $ \(Defn name args body) -> do
 --     addr <- alloc (Super name args body)
 --     modify (Env.insert name addr)
-
-
--- preludeDefs :: CoreProgram
--- preludeDefs = [ Defn "I" ["x"] (Var "x")
---               , Defn "K" ["y", "z"] (Var "y")
---               , Defn "K1" ["y", "z"] (Var "z")
---               , Defn "S" ["a", "b", "c"] ((Var "a" <> Var "c") <> (Var "b" <> Var "c"))
---               , Defn "D" ["f", "g", "h"] (Var "f" <> (Var "g" <> Var "h"))]
 
 -- compile :: Machine sig m => CoreProgram -> m Env
 -- compile program = do

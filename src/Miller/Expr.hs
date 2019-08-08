@@ -2,7 +2,19 @@
              KindSignatures, LambdaCase, OverloadedLists, OverloadedStrings, TemplateHaskell, TypeFamilies,
              TypeSynonymInstances, DerivingStrategies #-}
 
-module Miller.Expr where
+module Miller.Expr
+  ( Name (..)
+  , Rec (..)
+  , Expr (..)
+  , CoreExpr
+  , isAtomic
+  , Defn (..)
+  , CoreDefn
+  , isCAF
+  , Program (..)
+  , CoreProgram
+  , preludeDefs
+  ) where
 
 import Data.List.NonEmpty (NonEmpty)
 import Data.String
@@ -11,7 +23,7 @@ import Data.Text.Prettyprint.Doc
 import GHC.Exts (IsList (..))
 import Data.Hashable
 
-newtype Name = Name { unName :: Text }
+newtype Name = Name Text
   deriving newtype (Eq, IsString, Pretty, Show, Ord, Hashable)
 
 data Rec = Non | Rec deriving (Eq, Show)
@@ -33,16 +45,6 @@ data Expr a
 instance Semigroup (Expr a) where
   (<>) = Ap
 
--- instance Pretty CoreExpr where
---   pretty = cata $ \case
---     VarF n         -> pretty n
---     NumF i         -> pretty i
---     ApF f x        -> parens (f <+> x)
---     LetF r binds e -> parens (pretty r <+> prettyDefns (toList binds) <+> "in" <+> e)
---     _              -> "unimplemented"
---     where
---       prettyDefns = vsep . fmap (\(a, b) -> pretty a <+> "=" <+> b)
-
 isAtomic :: Expr a -> Bool
 isAtomic = \case
   Var{} -> True
@@ -52,6 +54,9 @@ isAtomic = \case
 type CoreExpr = Expr Name
 
 data Defn a = Defn Name [a] (Expr a) deriving (Eq, Show, Functor)
+
+isCAF :: Defn a -> Bool
+isCAF (Defn _ xs _) = null xs
 
 type CoreDefn = Defn Name
 
@@ -66,13 +71,9 @@ instance IsList (Program a) where
 
 type CoreProgram = Program Name
 
--- instance Pretty CoreProgram where
---   pretty (Program a) = vsep (toList (pretty <$> a))
-
-xPlusY :: CoreExpr
-xPlusY = Ap (Ap (Var "+") (Var "x")) (Var "y")
-
-prog :: CoreProgram
-prog = Program [ Defn "main" [] (Ap (Var "double") (Num 21))
-               , Defn "double" ["x"] (Ap (Ap (Var "add") (Var "x")) (Var "x"))
-               ]
+preludeDefs :: CoreProgram
+preludeDefs = [ Defn "I" ["x"] (Var "x")
+              , Defn "K" ["y", "z"] (Var "y")
+              , Defn "K1" ["y", "z"] (Var "z")
+              , Defn "S" ["a", "b", "c"] ((Var "a" <> Var "c") <> (Var "b" <> Var "c"))
+              , Defn "D" ["f", "g", "h"] (Var "f" <> (Var "g" <> Var "h"))]

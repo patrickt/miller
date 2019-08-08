@@ -14,6 +14,16 @@ import Miller.Expr
 import Miller.Pretty as Pretty
 import Miller.Parser as Parser
 
+
+xPlusY :: CoreExpr
+xPlusY = Ap (Ap (Var "+") (Var "x")) (Var "y")
+
+prog :: CoreProgram
+prog = Program [ Defn "main" [] (Ap (Var "double") (Num 21))
+               , Defn "double" ["x"] (Ap (Ap (Var "add") (Var "x")) (Var "x"))
+               ]
+
+
 parse :: Parser a -> String -> Either String a
 parse p = Trifecta.foldResult (Left . show) Right . parseString (p <* eof) mempty
 
