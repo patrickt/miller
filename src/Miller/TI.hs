@@ -4,6 +4,61 @@
 module Miller.TI where
 
 import Doors
+import Prelude hiding (lookup)
+
+import Control.Effect
+import Control.Effect.Error
+import Control.Effect.Reader
+import Control.Effect.State
+import Control.Effect.Writer
+
+
+import           Miller.Expr as Expr
+import           Miller.Stats (Stats)
+import qualified Miller.Stats as Stats
+import           Miller.TI.Env (Env)
+import           Miller.TI.Heap (Addr, Heap)
+import qualified Miller.TI.Heap as Heap
+
+
+-- The stack is a stack of addresses, each identifying a node in the heap.
+type Stack = [Addr]
+
+-- The dump records the state of the spine prior to the evaluation of
+-- an argument of a strict primitive. Currently unused.
+data Dump = Dump
+
+data TIMachine = TIMachine
+  { stack   :: Stack
+  , dump    :: Dump
+  , heap    :: Heap Node
+  , globals :: Env Addr
+  , stats   :: Stats
+  }
+
+instance Lower TIMachine where
+  lowerBound = TIMachine [] Dump lowerBound lowerBound mempty
+
+data Node
+  = NAp Addr Addr
+  | NSupercomb Name [Name] CoreExpr
+  | NNum Int
+    deriving (Eq, Show)
+
+type TI sig m = ( Member (State TIMachine) sig
+                , Carrier sig m
+                )
+
+allocateSC :: TI sig m => Expr.CoreDefn -> m Addr
+allocateSC (Expr.Defn name args body) = do
+  (new, addr) <- gets (Heap.alloc (NSupercomb name args body) . heap)
+  modify (\m -> m { heap = new })
+  pure addr
+
+-- compile :: CoreProgram -> TIMachine
+-- compile (Program ps) = run . runState (lowerBound @TIMachine) $ do
+--   ()
+--   start <- lookupGlobal "main"
 
 
 
@@ -13,17 +68,6 @@ import Doors
 
 
 
-
-
-
-
-
-
--- import Control.Effect
--- import Control.Effect.Error
--- import Control.Effect.Reader
--- import Control.Effect.State
--- import Control.Effect.Writer
 -- import Debug.Trace
 -- import Data.Semigroup (Max (..))
 
@@ -37,12 +81,7 @@ import Doors
 -- import qualified Miller.TI.Heap as Heap
 -- import qualified Text.Trifecta as Parser
 
--- data Node
---   = Ply Addr Addr
---   | Super Name [Name] CoreExpr
---   | Leaf Int
---   | Indirect Addr
---     deriving (Eq, Show)
+
 
 -- instance Pretty Node where
 --   pretty = \case
