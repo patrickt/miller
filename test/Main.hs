@@ -44,8 +44,8 @@ prop_expressions_roundtrip = property $ do
 prop_fixtures_roundtrip :: Property
 prop_fixtures_roundtrip = withTests 1 . property $ do
   let go f = do
-        item <- liftIO (parseFile parseProgram "examples/double.mac") >>= Hedgehog.evalEither
-        tripping item Pretty.showProgram (parse parseProgram)
+        item <- liftIO (parseFile parseProgram f) >>= Hedgehog.evalEither
+        tripping item Pretty.showProgram (parse (parseProgram <* eof))
 
   go "examples/double.mac"
   go "examples/pair.mac"
