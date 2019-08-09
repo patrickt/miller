@@ -2,6 +2,7 @@
 
 module Miller.Stats
   ( Stats
+  , steps
   , step
   , allocation
   , reduction

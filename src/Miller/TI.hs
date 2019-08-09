@@ -17,26 +17,34 @@ import           Miller.Expr as Expr
 import           Miller.Stats (Stats)
 import qualified Miller.Stats as Stats
 import           Miller.TI.Env (Env)
-import           Miller.TI.Heap (Addr, Heap)
+import           Miller.TI.Heap (Addr)
 import qualified Miller.TI.Heap as Heap
 
 
 -- The stack is a stack of addresses, each identifying a node in the heap.
 type Stack = [Addr]
 
+type Heap = Heap.Heap Node
+
 -- The dump records the state of the spine prior to the evaluation of
 -- an argument of a strict primitive. Currently unused.
-data Dump = Dump
+data Dump = Dump deriving (Eq, Show)
 
 data TIMachine = TIMachine
   { stack   :: Stack
   , dump    :: Dump
-  , heap    :: Heap Node
+  , heap    :: Heap
   , globals :: Env Addr
-  }
+  } deriving (Eq, Show)
 
 instance Lower TIMachine where
   lowerBound = TIMachine [] Dump lowerBound lowerBound
+
+stoppedMachine :: TIMachine
+stoppedMachine = lowerBound
+  { stack = [lowerBound]
+  , heap = Heap.update lowerBound (NNum 1) Heap.initial
+  }
 
 data Node
   = NAp Addr Addr
@@ -54,6 +62,17 @@ type TI sig m = ( Member (State TIMachine) sig
                 , Carrier sig m
                 )
 
+runTI :: WriterC Stats (StateC TIMachine PureC) a -> (a, TIMachine, Stats)
+runTI = runTI' lowerBound
+
+runTI' :: TIMachine -> WriterC Stats (StateC TIMachine PureC) a -> (a, TIMachine, Stats)
+runTI' start go =
+  let (mach, (stats, res)) = run  . runState start . runWriter $ go
+  in (res, mach, stats)
+
+
+
+-- Register a supercombinator in the heap.
 allocateSC :: TI sig m => Expr.CoreDefn -> m Addr
 allocateSC (Expr.Defn name args body) = do
   (new, addr) <- gets (Heap.alloc (NSupercomb name args body) . heap)
@@ -66,40 +85,49 @@ eval = execWriter @[TIMachine] go
   where
     go = do
       curr <- get
-      if isFinal curr
-        then pure ()
-        else do
-          tell @[TIMachine] [curr]
-          step *> Stats.step
-          go
+      tell @[TIMachine] [curr]
+      unless (isFinal curr) $ step *> Stats.step *> go
 
--- Are we in a final (stopped) state?
+-- -- Are we in a final (stopped) state?
 isFinal :: TIMachine -> Bool
 isFinal TIMachine{ stack, heap } = case stack of
+  []     -> error "No items on stack"
   [sole] -> maybe False isDataNode (Heap.lookup sole heap)
   _      -> False
 
 step :: TI sig m => m ()
-step = do
-  curr <- gets @Stack head
-  gets (Heap.lookup curr . head) >>= \case
-    Num n -> numStep n
-    NAp f x -> apStep f x
-    NSupercomb sc args body -> scStep sc args body
+step = error "undefined"
+-- step = do
+--   curr <- gets @Stack head
+--   gets (Heap.lookup curr . head) >>= \case
+--     Num n -> numStep n
+--     NAp f x -> apStep f x
+--     NSupercomb sc args body -> scStep sc args body
 
-numStep :: TI sig m => m ()
-numStep = error "number applied as a function"
+-- numStep :: TI sig m => m ()
+-- numStep = error "number applied as a function"
 
-apStep :: TI sig m => Addr -> Addr -> m ()
-apStep f _x = modify (\m -> m { stack = f : stack m })
+-- apStep :: TI sig m => Addr -> Addr -> m ()
+-- apStep f _x = modify (\m -> m { stack = f : stack m })
 
-scStep :: Name -> [Name] -> CoreExpr -> m ()
-scStep name args body = do
-  error "incomplete"
-  modify @Stack (drop (length args + 1))
+-- getArgs :: TI sig m => m [Addr]
+-- getArgs = do
+--   stk <- gets stack
+--   case stk of
+--     [] -> pure []
+--     (sc:args) -> for args $ \addr -> do
+--       NAp fun arg <- lookup addr
+--       pure arg
+
+-- scStep :: TI sig m => Name -> [Name] -> CoreExpr -> m ()
+-- scStep name args body = do
 
 
-  modify @Stack (result :)
+--   dropped <- gets @Stack (drop (length args + 1))
+--   let
+--   modify (\m -> m { stack = _newStack
+--                   , heap  = _newHeap
+--                   })
 
 -- compile :: CoreProgram -> TIMachine
 -- compile (Program ps) = run . runState (lowerBound @TIMachine) $ do
