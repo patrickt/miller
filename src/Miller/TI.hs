@@ -3,7 +3,7 @@
 
 module Miller.TI where
 
-import Doors
+import Doors hiding (find)
 import Prelude hiding (lookup)
 
 import Control.Effect
@@ -17,6 +17,7 @@ import           Miller.Expr as Expr
 import           Miller.Stats (Stats)
 import qualified Miller.Stats as Stats
 import           Miller.TI.Env (Env)
+import qualified Miller.TI.Env as Env
 import           Miller.TI.Heap (Heap, Addr)
 import qualified Miller.TI.Heap as Heap
 
@@ -27,8 +28,8 @@ data Dump = Dump deriving (Eq, Show)
 data TIMachine = TIMachine
   { stack   :: [Addr]
   , dump    :: Dump
-  , heap    :: Heap Node
-  , globals :: Env Addr
+  , heap    :: Heap Node -- maps Addr to Node
+  , globals :: Env Addr  -- maps Name to Addr
   } deriving (Eq, Show)
 
 instance Lower TIMachine where
@@ -70,8 +71,11 @@ isDataNode _        = False
 data TIFailure
   = EmptyStack
   | NumberAppliedAsFunction
+  | UnboundName Name
+  | DeadPointer Addr
+  | BadArgument Node
   | Unimplemented
-    deriving (Eq, Ord, Show)
+    deriving (Eq, Show)
 
 type TI sig m = ( Member (State TIMachine) sig
                 , Member (Writer Stats) sig
@@ -88,11 +92,18 @@ runTI' start go =
   let (mach, (stats, res)) = run . runState start . runWriter . runError $ go
   in (res, mach, stats)
 
+-- Register an item in the heap
+store :: TI sig m => Node -> m Addr
+store n = do
+  (new, item) <- gets (Heap.alloc n . heap)
+  modify (\m -> m { heap = new})
+  pure item
+
 -- Register a supercombinator in the heap.
 allocateSC :: TI sig m => Expr.CoreDefn -> m Addr
 allocateSC (Expr.Defn name args body) = do
-  (new, addr) <- gets (Heap.alloc (NSupercomb name args body) . heap)
-  modify (\m -> m { heap = new })
+  addr <- store (NSupercomb name args body)
+  modify (\m -> m { globals = Env.insert name addr (globals m) })
   pure addr
 
 -- Evaluate the loaded program, returning the set of all seen states.
@@ -111,19 +122,69 @@ stackHead :: TI sig m => m Addr
 stackHead = gets (listToMaybe . stack) >>= maybeM (throwError EmptyStack)
 
 step :: TI sig m => m ()
-step = do
-  curr <- stackHead
-  gets (Heap.lookup curr . heap) >>= \case
-    Just (NNum n) -> numStep n
-    _             -> throwError Unimplemented
-    -- NAp f x -> apStep f x
+step = stackHead >>= find >>= \case
+  NNum n -> numStep n
+  NAp f x -> apStep f x
+  NSupercomb name args body -> scStep name args body
     -- NSupercomb sc args body -> scStep sc args body
 
 numStep :: TI sig m => Int -> m ()
 numStep _ = throwError NumberAppliedAsFunction
 
--- apStep :: TI sig m => Addr -> Addr -> m ()
--- apStep f _x = modify (\m -> m { stack = f : stack m })
+-- As per the unwind rule, we look leftwards and downwards
+-- to get the current thing to apply, so we only look in 'f'.
+apStep :: TI sig m => Addr -> Addr -> m ()
+apStep f _x = modify (\m -> m { stack = f : stack m })
+
+lookup :: TI sig m => Name -> m Addr
+lookup n = gets (Env.lookup n . globals) >>= maybeM (throwError (UnboundName n))
+
+find :: TI sig m => Addr -> m Node
+find a = gets (Heap.lookup a . heap) >>= maybeM (throwError (DeadPointer a))
+
+getargs :: TI sig m => [Name] -> m [Addr]
+getargs args = gets stack >>= \case
+  []         -> throwError EmptyStack
+  (sc:items) -> traverse go items
+    where go addr = find addr >>= \case
+            NAp _fun arg -> pure arg
+            n            -> throwError (BadArgument n)
+
+
+
+-- UPDATES WILL BE PERFORMED HERE
+scStep :: TI sig m => Name -> [Name] -> CoreExpr -> m ()
+scStep name args body = do
+  -- Bind argument names to addresses
+  addrs <- getargs args
+  globals <- gets globals
+  result <- instantiate body (Env.fromBindings args addrs <> globals)
+
+  -- Discard arguments from stack (including root)
+  newStack <- gets (drop (length args + 1) . stack)
+  -- Push result onto stack
+  modify (\m -> m { stack = result : newStack })
+
+compile :: TI sig m => CoreProgram -> m [TIMachine]
+compile ps = do
+  traverse allocateSC (unProgram (preludeDefs <> ps))
+  main <- lookup "main"
+  modify (\m -> m { stack = [main] })
+  eval
+
+execute :: TI sig m => CoreProgram -> m Node
+execute p = do
+  void $ compile p
+  stackHead >>= find
+
+instantiate :: TI sig m => CoreExpr -> Env Addr -> m Addr
+instantiate e env = case e of
+  Expr.Num i  -> store (NNum i)
+  Expr.Var n  -> Env.lookup n env & maybeM (throwError (UnboundName n))
+  Expr.Ap f x -> do
+    fore <- instantiate f env
+    aft  <- instantiate x env
+    store (NAp fore aft)
 
 -- getArgs :: TI sig m => m [Addr]
 -- getArgs = do
@@ -134,8 +195,7 @@ numStep _ = throwError NumberAppliedAsFunction
 --       NAp fun arg <- lookup addr
 --       pure arg
 
--- scStep :: TI sig m => Name -> [Name] -> CoreExpr -> m ()
--- scStep name args body = do
+
 
 
 --   dropped <- gets @Stack (drop (length args + 1))

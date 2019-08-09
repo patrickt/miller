@@ -23,7 +23,7 @@ import           Data.Stream.Infinite (Stream (..))
 import qualified Data.Stream.Infinite as Stream
 import qualified Data.Text.Prettyprint.Doc as Pretty
 
-newtype Addr = Addr Int deriving (Eq, Lower)
+newtype Addr = Addr Int deriving (Eq, Ord, Lower)
 
 unallocated :: Addr
 unallocated = Addr (negate 1)
