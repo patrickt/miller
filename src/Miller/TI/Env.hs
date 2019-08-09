@@ -1,4 +1,4 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, TypeFamilies, OverloadedStrings #-}
+{-# LANGUAGE DeriveFoldable, DeriveFunctor, DeriveTraversable, GeneralizedNewtypeDeriving, TypeFamilies, OverloadedStrings #-}
 
 module Miller.TI.Env
   ( Env
@@ -18,7 +18,7 @@ import qualified Data.Text.Prettyprint.Doc as Pretty
 
 import           Miller.Expr
 
-newtype Env a = Env (HashMap Name a) deriving (Eq, Show, Semigroup, Monoid, Lower)
+newtype Env a = Env (HashMap Name a) deriving (Eq, Show, Semigroup, Monoid, Functor, Foldable, Traversable, Lower)
 
 instance Pretty a => Pretty (Env a) where
   pretty (Env e) = do

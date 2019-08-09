@@ -77,15 +77,12 @@ prop_ti_allocateSC_registers_heap_entry = property $ do
   names <- nub <$> forAll (Gen.list (Range.constant 5 25) name)
   let count = length names
   let (eRes, mach, _stats) = TI.runTI $
-        for names $ \name -> do
-          addr <- TI.allocateSC (Defn name [] (Num 1))
-          pure (name, addr)
+        for names $ \name -> TI.allocateSC (Defn name [] (Num 1))
 
   res <- evalEither eRes
   Heap.count (TI.heap mach) === count
 
   for_ res $ \(name, addr) -> do
-    Env.lookup name (TI.globals mach) === Just addr
     Heap.lookup addr (TI.heap mach) === Just (TI.NSupercomb name [] (Num 1))
 
 prop_eval_finalized_machine_is_noop :: Property
@@ -113,8 +110,9 @@ prog :: MonadTest m => String -> m CoreProgram
 prog p = evalEither (Trifecta.foldResult (Left . show) Right . parseString (parseProgram <* eof) mempty $ p)
 
 prop_works_with_examples :: Property
-prop_works_with_examples = testCase $
+prop_works_with_examples = testCase $ do
   prog "main = S K K 3" >>= assertExecutesAs (TI.NNum 3)
+  prog "main = let three = 3 in S K K 3" >>= assertExecutesAs (TI.NNum 3)
 
 main :: IO ()
 main = void (checkParallel $$(discover))

@@ -16,7 +16,6 @@ import Control.Effect.Writer
 import           Miller.Expr as Expr
 import           Miller.Stats (Stats)
 import qualified Miller.Stats as Stats
-import           Miller.TI.Env (Env)
 import qualified Miller.TI.Env as Env
 import           Miller.TI.Heap (Heap, Addr)
 import qualified Miller.TI.Heap as Heap
@@ -25,15 +24,16 @@ import qualified Miller.TI.Heap as Heap
 -- an argument of a strict primitive. Currently unused.
 data Dump = Dump deriving (Eq, Show)
 
+type Env = Env.Env Addr
+
 data TIMachine = TIMachine
   { stack   :: [Addr]
   , dump    :: Dump
   , heap    :: Heap Node -- maps Addr to Node
-  , globals :: Env Addr  -- maps Name to Addr
   } deriving (Eq, Show)
 
 instance Lower TIMachine where
-  lowerBound = TIMachine [] Dump lowerBound lowerBound
+  lowerBound = TIMachine [] Dump lowerBound
 
 data Status
   = Crashed
@@ -78,18 +78,19 @@ data TIFailure
     deriving (Eq, Show)
 
 type TI sig m = ( Member (State TIMachine) sig
+                , Member (Reader Env) sig
                 , Member (Writer Stats) sig
                 , Member (Error TIFailure) sig
                 , Effect sig
                 , Carrier sig m
                 )
 
-runTI :: ErrorC TIFailure (WriterC Stats (StateC TIMachine PureC)) a -> (Either TIFailure a, TIMachine, Stats)
+runTI :: ReaderC Env (ErrorC TIFailure (WriterC Stats (StateC TIMachine PureC))) a -> (Either TIFailure a, TIMachine, Stats)
 runTI = runTI' lowerBound
 
-runTI' :: TIMachine -> ErrorC TIFailure (WriterC Stats (StateC TIMachine PureC)) a -> (Either TIFailure a, TIMachine, Stats)
+runTI' :: TIMachine -> ReaderC Env (ErrorC TIFailure (WriterC Stats (StateC TIMachine PureC))) a -> (Either TIFailure a, TIMachine, Stats)
 runTI' start go =
-  let (mach, (stats, res)) = run . runState start . runWriter . runError $ go
+  let (mach, (stats, res)) = run . runState start . runWriter . runError . runReader @Env mempty $ go
   in (res, mach, stats)
 
 -- Register an item in the heap
@@ -100,11 +101,10 @@ store n = do
   pure item
 
 -- Register a supercombinator in the heap.
-allocateSC :: TI sig m => Expr.CoreDefn -> m Addr
+allocateSC :: TI sig m => Expr.CoreDefn -> m (Name, Addr)
 allocateSC (Expr.Defn name args body) = do
   addr <- store (NSupercomb name args body)
-  modify (\m -> m { globals = Env.insert name addr (globals m) })
-  pure addr
+  pure (name, addr)
 
 -- Evaluate the loaded program, returning the set of all seen states.
 eval :: TI sig m => m [TIMachine]
@@ -137,7 +137,7 @@ apStep :: TI sig m => Addr -> Addr -> m ()
 apStep f _x = modify (\m -> m { stack = f : stack m })
 
 lookup :: TI sig m => Name -> m Addr
-lookup n = gets (Env.lookup n . globals) >>= maybeM (throwError (UnboundName n))
+lookup n = asks (Env.lookup n) >>= maybeM (throwError (UnboundName n))
 
 find :: TI sig m => Addr -> m Node
 find a = gets (Heap.lookup a . heap) >>= maybeM (throwError (DeadPointer a))
@@ -156,9 +156,8 @@ getargs args = gets stack >>= \case
 scStep :: TI sig m => Name -> [Name] -> CoreExpr -> m ()
 scStep name args body = do
   -- Bind argument names to addresses
-  addrs <- getargs args
-  globals <- gets globals
-  result <- instantiate body (Env.fromBindings args addrs <> globals)
+  argBindings <- Env.fromBindings args <$> getargs args
+  result <- local (mappend argBindings) (instantiate body)
 
   -- Discard arguments from stack (including root)
   newStack <- gets (drop (length args + 1) . stack)
@@ -167,24 +166,29 @@ scStep name args body = do
 
 compile :: TI sig m => CoreProgram -> m [TIMachine]
 compile ps = do
-  traverse allocateSC (unProgram (preludeDefs <> ps))
-  main <- lookup "main"
-  modify (\m -> m { stack = [main] })
-  eval
+  toplevels <- Env.fromList <$> traverse allocateSC (unProgram (preludeDefs <> ps))
+  local (mappend toplevels) $ do
+    main <- lookup "main"
+    modify (\m -> m { stack = [main] })
+    eval
 
 execute :: TI sig m => CoreProgram -> m Node
 execute p = do
   void $ compile p
   stackHead >>= find
 
-instantiate :: TI sig m => CoreExpr -> Env Addr -> m Addr
-instantiate e env = case e of
+instantiate :: TI sig m => CoreExpr -> m Addr
+instantiate e = case e of
   Expr.Num i  -> store (NNum i)
-  Expr.Var n  -> Env.lookup n env & maybeM (throwError (UnboundName n))
+  Expr.Var n  -> lookup n
   Expr.Ap f x -> do
-    fore <- instantiate f env
-    aft  <- instantiate x env
+    fore <- instantiate f
+    aft  <- instantiate x
     store (NAp fore aft)
+  Let Non binds bod -> do
+    let newBindings = Env.fromList binds
+    newEnv <- traverse instantiate newBindings
+    local (mappend newEnv) (instantiate bod)
 
 -- getArgs :: TI sig m => m [Addr]
 -- getArgs = do
