@@ -6,6 +6,7 @@ module Doors
 import Control.Monad as X
 import Control.Monad.IO.Class as X
 import Data.Coerce as X
+import Data.Bool as X
 import Data.Foldable as X
 import Data.Maybe as X
 import Data.Traversable as X

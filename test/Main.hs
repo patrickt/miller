@@ -68,15 +68,19 @@ prop_fixtures_roundtrip = testCase $ do
 
 ----- TI tests
 
+prop_machine_stopped :: Property
+prop_machine_stopped = testCase (TI.machineStatus TI.stoppedMachine === TI.Stopped)
+
 prop_ti_allocateSC_registers_heap_entry :: Property
 prop_ti_allocateSC_registers_heap_entry = property $ do
   names <- nub <$> forAll (Gen.list (Range.constant 5 25) name)
   let count = length names
-  let (res, mach, _stats) = TI.runTI $
+  let (eRes, mach, _stats) = TI.runTI $
         for names $ \name -> do
           addr <- TI.allocateSC (Defn name [] (Num 1))
           pure (name, addr)
 
+  res <- evalEither eRes
   Heap.count (TI.heap mach) === count
 
   for_ res $ \(name, addr) ->
@@ -85,7 +89,7 @@ prop_ti_allocateSC_registers_heap_entry = property $ do
 prop_eval_finalized_machine_is_noop :: Property
 prop_eval_finalized_machine_is_noop = testCase $ do
   let (res, mach, stats) = TI.runTI' TI.stoppedMachine TI.eval
-  res === [TI.stoppedMachine]
+  res === Right [TI.stoppedMachine]
   Stats.steps stats === 0
 
 main :: IO ()

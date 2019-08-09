@@ -17,34 +17,45 @@ import           Miller.Expr as Expr
 import           Miller.Stats (Stats)
 import qualified Miller.Stats as Stats
 import           Miller.TI.Env (Env)
-import           Miller.TI.Heap (Addr)
+import           Miller.TI.Heap (Heap, Addr)
 import qualified Miller.TI.Heap as Heap
-
-
--- The stack is a stack of addresses, each identifying a node in the heap.
-type Stack = [Addr]
-
-type Heap = Heap.Heap Node
 
 -- The dump records the state of the spine prior to the evaluation of
 -- an argument of a strict primitive. Currently unused.
 data Dump = Dump deriving (Eq, Show)
 
 data TIMachine = TIMachine
-  { stack   :: Stack
+  { stack   :: [Addr]
   , dump    :: Dump
-  , heap    :: Heap
+  , heap    :: Heap Node
   , globals :: Env Addr
   } deriving (Eq, Show)
 
 instance Lower TIMachine where
   lowerBound = TIMachine [] Dump lowerBound lowerBound
 
+data Status
+  = Crashed
+  | Stopped
+  | Active
+    deriving (Eq, Show)
+
 stoppedMachine :: TIMachine
 stoppedMachine = lowerBound
   { stack = [lowerBound]
   , heap = Heap.update lowerBound (NNum 1) Heap.initial
   }
+
+isFinal :: TIMachine -> Bool
+isFinal m = machineStatus m /= Active
+
+machineStatus :: TIMachine -> Status
+machineStatus TIMachine{ stack, heap } =
+  let decide x = if isDataNode x then Stopped else Active
+  in case stack of
+    []     -> Crashed
+    [sole] -> maybe Crashed decide (Heap.lookup sole heap)
+    _      -> Active
 
 data Node
   = NAp Addr Addr
@@ -56,21 +67,26 @@ isDataNode :: Node -> Bool
 isDataNode (NNum _) = True
 isDataNode _        = False
 
+data TIFailure
+  = EmptyStack
+  | NumberAppliedAsFunction
+  | Unimplemented
+    deriving (Eq, Ord, Show)
+
 type TI sig m = ( Member (State TIMachine) sig
                 , Member (Writer Stats) sig
+                , Member (Error TIFailure) sig
                 , Effect sig
                 , Carrier sig m
                 )
 
-runTI :: WriterC Stats (StateC TIMachine PureC) a -> (a, TIMachine, Stats)
+runTI :: ErrorC TIFailure (WriterC Stats (StateC TIMachine PureC)) a -> (Either TIFailure a, TIMachine, Stats)
 runTI = runTI' lowerBound
 
-runTI' :: TIMachine -> WriterC Stats (StateC TIMachine PureC) a -> (a, TIMachine, Stats)
+runTI' :: TIMachine -> ErrorC TIFailure (WriterC Stats (StateC TIMachine PureC)) a -> (Either TIFailure a, TIMachine, Stats)
 runTI' start go =
-  let (mach, (stats, res)) = run  . runState start . runWriter $ go
+  let (mach, (stats, res)) = run . runState start . runWriter . runError $ go
   in (res, mach, stats)
-
-
 
 -- Register a supercombinator in the heap.
 allocateSC :: TI sig m => Expr.CoreDefn -> m Addr
@@ -86,26 +102,25 @@ eval = execWriter @[TIMachine] go
     go = do
       curr <- get
       tell @[TIMachine] [curr]
-      unless (isFinal curr) $ step *> Stats.step *> go
+      case machineStatus curr of
+        Crashed -> throwError EmptyStack
+        Stopped -> pure ()
+        Active  -> step *> Stats.step *> go
 
--- -- Are we in a final (stopped) state?
-isFinal :: TIMachine -> Bool
-isFinal TIMachine{ stack, heap } = case stack of
-  []     -> error "No items on stack"
-  [sole] -> maybe False isDataNode (Heap.lookup sole heap)
-  _      -> False
+stackHead :: TI sig m => m Addr
+stackHead = gets (listToMaybe . stack) >>= maybeM (throwError EmptyStack)
 
 step :: TI sig m => m ()
-step = error "undefined"
--- step = do
---   curr <- gets @Stack head
---   gets (Heap.lookup curr . head) >>= \case
---     Num n -> numStep n
---     NAp f x -> apStep f x
---     NSupercomb sc args body -> scStep sc args body
+step = do
+  curr <- stackHead
+  gets (Heap.lookup curr . heap) >>= \case
+    Just (NNum n) -> numStep n
+    _             -> throwError Unimplemented
+    -- NAp f x -> apStep f x
+    -- NSupercomb sc args body -> scStep sc args body
 
--- numStep :: TI sig m => m ()
--- numStep = error "number applied as a function"
+numStep :: TI sig m => Int -> m ()
+numStep _ = throwError NumberAppliedAsFunction
 
 -- apStep :: TI sig m => Addr -> Addr -> m ()
 -- apStep f _x = modify (\m -> m { stack = f : stack m })
