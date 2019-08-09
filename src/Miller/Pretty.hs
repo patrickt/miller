@@ -3,6 +3,7 @@
 module Miller.Pretty
   ( showExpr
   , showProgram
+  , renderShow
   ) where
 
 import Doors
@@ -11,6 +12,9 @@ import Data.Text.Prettyprint.Doc
 import qualified Data.Text.Prettyprint.Doc.Render.String as Pretty
 
 import Miller.Expr
+
+renderShow :: Pretty a => a -> String
+renderShow = Pretty.renderString . layoutSmart defaultLayoutOptions . pretty
 
 showExpr :: CoreExpr -> String
 showExpr = Pretty.renderString . layoutSmart defaultLayoutOptions . prettyExpr

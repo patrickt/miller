@@ -18,7 +18,7 @@ common shared
   default-extensions: FlexibleContexts
   build-depends:    base >= 4.7 && < 5
                   , containers       ^>= 0.6.1
-                  , fused-effects ^>= 0.4.0.0
+                  , fused-effects ^>= 0.5.0.0
                   , generic-monoid ^>= 0.1.0.0
                   , hashable ^>= 1.2.7
                   , parsers ^>= 0.12.9

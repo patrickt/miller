@@ -11,7 +11,9 @@ import Control.Effect.Error
 import Control.Effect.Reader
 import Control.Effect.State
 import Control.Effect.Writer
-
+import qualified Data.Text.Prettyprint.Doc as Pretty
+import Data.Text.Prettyprint.Doc ((<+>))
+import Control.Monad.Fix
 
 import           Miller.Expr as Expr
 import           Miller.Stats (Stats)
@@ -24,13 +26,24 @@ import qualified Miller.TI.Heap as Heap
 -- an argument of a strict primitive. Currently unused.
 data Dump = Dump deriving (Eq, Show)
 
+type Stack = [Addr]
+
+prettyStack :: [Addr] -> Pretty.Doc a
+prettyStack st = Pretty.align (Pretty.list (fmap pretty st))
+
 type Env = Env.Env Addr
 
 data TIMachine = TIMachine
-  { stack   :: [Addr]
+  { stack   :: Stack
   , dump    :: Dump
   , heap    :: Heap Node -- maps Addr to Node
   } deriving (Eq, Show)
+
+instance Pretty.Pretty TIMachine where
+  pretty TIMachine{stack, dump, heap} =
+    Pretty.vcat [ "stack" <+> "=" <+> prettyStack stack
+                , "heap " <+> "=" <+> pretty heap
+                ]
 
 instance Lower TIMachine where
   lowerBound = TIMachine [] Dump lowerBound
@@ -62,7 +75,10 @@ data Node
   = NAp Addr Addr
   | NSupercomb Name [Name] CoreExpr
   | NNum Int
+  | NEphemeral
     deriving (Eq, Show)
+
+instance Pretty.Pretty Node where pretty = Pretty.viaShow
 
 isDataNode :: Node -> Bool
 isDataNode (NNum _) = True
@@ -73,6 +89,7 @@ data TIFailure
   | NumberAppliedAsFunction
   | UnboundName Name
   | DeadPointer Addr
+  | TooFewArguments Int Int
   | BadArgument Node
   | Unimplemented
     deriving (Eq, Show)
@@ -83,6 +100,7 @@ type TI sig m = ( Member (State TIMachine) sig
                 , Member (Error TIFailure) sig
                 , Effect sig
                 , Carrier sig m
+                , MonadFix m
                 )
 
 runTI :: ReaderC Env (ErrorC TIFailure (WriterC Stats (StateC TIMachine PureC))) a -> (Either TIFailure a, TIMachine, Stats)
@@ -97,8 +115,8 @@ runTI' start go =
 store :: TI sig m => Node -> m Addr
 store n = do
   (new, item) <- gets (Heap.alloc n . heap)
-  modify (\m -> m { heap = new})
-  pure item
+  modify (\m -> m { heap = new })
+  item <$ Stats.allocation
 
 -- Register a supercombinator in the heap.
 allocateSC :: TI sig m => Expr.CoreDefn -> m (Name, Addr)
@@ -116,7 +134,7 @@ eval = execWriter @[TIMachine] go
       case machineStatus curr of
         Crashed -> throwError EmptyStack
         Stopped -> pure ()
-        Active  -> step *> Stats.step *> go
+        Active  -> step *> go
 
 stackHead :: TI sig m => m Addr
 stackHead = gets (listToMaybe . stack) >>= maybeM (throwError EmptyStack)
@@ -155,6 +173,11 @@ getargs args = gets stack >>= \case
 -- UPDATES WILL BE PERFORMED HERE
 scStep :: TI sig m => Name -> [Name] -> CoreExpr -> m ()
 scStep name args body = do
+  given <- gets (pred . length . stack)
+  let needed = length args
+  when (given < needed) (throwError (TooFewArguments given needed))
+  Stats.depth given
+
   -- Bind argument names to addresses
   argBindings <- Env.fromBindings args <$> getargs args
   result <- local (mappend argBindings) (instantiate body)
@@ -163,6 +186,7 @@ scStep name args body = do
   newStack <- gets (drop (length args + 1) . stack)
   -- Push result onto stack
   modify (\m -> m { stack = result : newStack })
+  Stats.reduction
 
 compile :: TI sig m => CoreProgram -> m [TIMachine]
 compile ps = do
@@ -186,9 +210,14 @@ instantiate e = case e of
     aft  <- instantiate x
     store (NAp fore aft)
   Let Non binds bod -> do
-    let newBindings = Env.fromList binds
-    newEnv <- traverse instantiate newBindings
-    local (mappend newEnv) (instantiate bod)
+    augmented <- traverse instantiate (Env.fromList binds)
+    local (mappend augmented) (instantiate bod)
+  Let Rec binds bod -> do
+    stage1 <- traverse (const (store NEphemeral)) (Env.fromList binds)
+    stage2 <- local (mappend stage1) (traverse instantiate (Env.fromList binds))
+    local (mappend stage2) (instantiate bod)
+
+
 
 -- getArgs :: TI sig m => m [Addr]
 -- getArgs = do

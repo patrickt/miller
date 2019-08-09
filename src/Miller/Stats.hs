@@ -23,7 +23,7 @@ data Stats = Stats
   { steps       :: Sum Int
   , allocations :: Sum Int
   , reductions  :: Sum Int
-  , maxDepth    :: Max Word
+  , maxDepth    :: Max Int
   } deriving (Show, Generic)
     deriving Semigroup via GenericSemigroup Stats
     deriving Monoid    via GenericMonoid    Stats
@@ -33,8 +33,8 @@ step       = tell mempty { steps = 1 }
 allocation = tell mempty { allocations = 1 }
 reduction  = tell mempty { reductions = 1 }
 
-depth :: (Member (Writer Stats) sig, Carrier sig m) => Max Word -> m ()
-depth n = tell mempty { maxDepth = n }
+depth :: (Member (Writer Stats) sig, Carrier sig m) => Int -> m ()
+depth n = tell mempty { maxDepth = Max n }
 
 instance Pretty Stats where
   pretty Stats{..} = vcat [ "Steps:" <+> pretty (getSum steps)

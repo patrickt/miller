@@ -88,6 +88,7 @@ prop_ti_allocateSC_registers_heap_entry = property $ do
 prop_eval_finalized_machine_is_noop :: Property
 prop_eval_finalized_machine_is_noop = testCase $ do
   let (res, mach, stats) = TI.runTI' TI.stoppedMachine TI.eval
+  footnote (Pretty.renderShow mach)
   res === Right [TI.stoppedMachine]
   Stats.steps stats === 0
 
@@ -101,18 +102,31 @@ prop_instantiate_fails_when_applying_two_naturals = testCase $ do
 assertExecutesAs :: MonadTest m => TI.Node -> Expr.CoreProgram -> m ()
 assertExecutesAs n p = do
   let (eRes, mach, stats) = TI.runTI (TI.execute p)
-  footnote (show mach)
-  footnote (show stats)
+  annotate (Pretty.renderShow mach)
+  footnote (Pretty.renderShow stats)
   res <- evalEither eRes
   res === n
 
+assertFailsWith :: MonadTest m => TI.TIFailure -> Expr.CoreProgram -> m ()
+assertFailsWith e p = do
+  let (eRes, mach, stats) = TI.runTI (TI.execute p)
+  footnote (show mach)
+  footnote (show stats)
+  eRes === Left e
+
 prog :: MonadTest m => String -> m CoreProgram
 prog p = evalEither (Trifecta.foldResult (Left . show) Right . parseString (parseProgram <* eof) mempty $ p)
+
+prop_handles_too_few_args :: Property
+prop_handles_too_few_args = testCase $ do
+  prog "main = S 1" >>= assertFailsWith (TI.TooFewArguments 1 3)
+  prog "main = S 1 2" >>= assertFailsWith (TI.TooFewArguments 2 3)
 
 prop_works_with_examples :: Property
 prop_works_with_examples = testCase $ do
   prog "main = S K K 3" >>= assertExecutesAs (TI.NNum 3)
   prog "main = let three = 3 in S K K 3" >>= assertExecutesAs (TI.NNum 3)
+  prog "main = letrec three = 3 in S K K 3" >>= assertExecutesAs (TI.NNum 3)
 
 main :: IO ()
 main = void (checkParallel $$(discover))

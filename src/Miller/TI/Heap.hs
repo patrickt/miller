@@ -42,9 +42,9 @@ instance Show a => Show (Heap a) where show = show . entries
 
 instance Pretty a => Pretty (Heap a) where
   pretty (Heap _ _ e) = do
-    let pair (a, b) = pretty a <> "=" <> pretty b
+    let pair (a, b) = pretty a <> ": " <> pretty b
     let elements    = fmap pair (IM.toList e)
-    Pretty.list elements
+    Pretty.align (Pretty.list elements)
 
 instance Lower (Heap a) where lowerBound = initial
 
