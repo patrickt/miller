@@ -33,7 +33,7 @@ common shared
 library
   import:              shared
   hs-source-dirs:      src
-  ghc-options:         -Wall
+  ghc-options:         -Wall -Werror
   exposed-modules:     Doors
                      , Miller.Expr
                      , Miller.Parser

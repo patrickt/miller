@@ -16,7 +16,6 @@ module Miller.TI.Heap
 import Doors
 import Prelude hiding (lookup)
 
-import           Data.Function
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IM
 import           Data.Stream.Infinite (Stream (..))
