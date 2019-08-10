@@ -9,7 +9,7 @@ import Prelude hiding (lookup)
 import Control.Effect hiding (StateC)
 import Control.Effect.Error
 import Control.Effect.Reader
-import Control.Effect.State.Lazy
+import Control.Effect.State
 import Data.Functor.Identity
 import Control.Effect.Writer
 import qualified Data.Text.Prettyprint.Doc as Pretty
@@ -183,7 +183,7 @@ scStep name args body = do
   argBindings <- Env.fromBindings args <$> getargs args
   newEnviron  <- mappend argBindings <$> ask
   h           <- gets heap
-  let (newHeap, result) = instantiate newEnviron h body
+  let (newHeap, result) = run $ runReader newEnviron $ instantiate h body
   modify (\m -> m { heap = newHeap })
 
   -- Discard arguments from stack (including root)
@@ -208,26 +208,26 @@ execute p = do
 pushEnv :: TI sig m => Env -> m a -> m a
 pushEnv e = local (mappend e)
 
-instantiate :: Env -> Heap Node -> CoreExpr -> (Heap Node, Addr)
-instantiate env heap' e = case e of
-  Expr.Num i  -> Heap.alloc (NNum i) heap'
+instantiate :: Heap Node -> CoreExpr -> ReaderC Env PureC (Heap Node, Addr)
+instantiate heap' e = case e of
+  Expr.Num i  -> pure (Heap.alloc (NNum i) heap')
   Expr.Var n  -> do
-    let item = Env.lookup n env
-    (heap', fromMaybe (error (show n)) item)
+    item <- Env.lookup n <$> ask
+    pure (heap', fromMaybe (error (show n)) item)
   Expr.Ap f x -> do
-    let (heap1, fore) = instantiate env heap' f
-    let (heap2, aft)  = instantiate env heap1 x
-    Heap.alloc (NAp fore aft) heap2
+    (heap1, fore) <- instantiate heap' f
+    (heap2, aft)  <- instantiate heap1 x
+    pure (Heap.alloc (NAp fore aft) heap2)
   Let Non binds bod -> do
-    let go h (_n, e) = instantiate env h e
-    let (newHeap :: Heap Node, newVals :: [Addr]) = mapAccumL go heap' (toList binds)
+    let go (_n, e) = StateC (\s -> instantiate s e)
+    (newHeap :: Heap Node, newVals :: [Addr]) <- runState heap' $ traverse go (toList binds)
     let newBindings = Env.fromList (zip (fmap fst (toList binds)) newVals)
-    instantiate (newBindings <> env) newHeap bod
-  Let Rec binds bod -> runIdentity mdo
-    let go h (_n, e) = instantiate newBindings h e
-    (newHeap :: Heap Node, newVals :: [Addr]) <- Identity (mapAccumL go heap' (toList binds))
-    newBindings <- Identity (Env.fromList (zip (fmap fst (toList binds)) newVals))
-    pure (instantiate (newBindings <> env) newHeap bod)
+    local (newBindings <>) (instantiate newHeap bod)
+  Let Rec binds bod -> mdo
+    let go (_n, e) = StateC (\s -> local (newBindings <>) (instantiate s e))
+    (newHeap :: Heap Node, newVals :: [Addr]) <- runState heap' (traverse go (toList binds))
+    newBindings <- pure (Env.fromList (zip (fmap fst (toList binds)) newVals))
+    local (newBindings <>) (instantiate newHeap bod)
 
 
 
