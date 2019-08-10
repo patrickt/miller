@@ -12,8 +12,8 @@ module Miller.TI.Env
 import Prelude hiding (lookup)
 import           Doors
 
-import           Data.HashMap.Strict (HashMap)
-import qualified Data.HashMap.Strict as HM
+import           Data.HashMap.Lazy (HashMap)
+import qualified Data.HashMap.Lazy as HM
 import qualified Data.Text.Prettyprint.Doc as Pretty
 
 import           Miller.Expr

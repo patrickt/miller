@@ -1,15 +1,16 @@
 {-# LANGUAGE BlockArguments, ConstraintKinds, FlexibleContexts, FlexibleInstances, LambdaCase, OverloadedLists,
-             OverloadedStrings, RecordWildCards, TupleSections, TypeApplications, NamedFieldPuns #-}
+             OverloadedStrings, RecordWildCards, TupleSections, RecursiveDo, TypeApplications, NamedFieldPuns, ScopedTypeVariables #-}
 
 module Miller.TI where
 
 import Doors hiding (find)
 import Prelude hiding (lookup)
 
-import Control.Effect
+import Control.Effect hiding (StateC)
 import Control.Effect.Error
 import Control.Effect.Reader
-import Control.Effect.State
+import Control.Effect.State.Lazy
+import Data.Functor.Identity
 import Control.Effect.Writer
 import qualified Data.Text.Prettyprint.Doc as Pretty
 import Data.Text.Prettyprint.Doc ((<+>))
@@ -91,7 +92,7 @@ data TIFailure
   | DeadPointer Addr
   | TooFewArguments Int Int
   | BadArgument Node
-  | Unimplemented
+  | Unimplemented CoreExpr
     deriving (Eq, Show)
 
 type TI sig m = ( Member (State TIMachine) sig
@@ -180,7 +181,10 @@ scStep name args body = do
 
   -- Bind argument names to addresses
   argBindings <- Env.fromBindings args <$> getargs args
-  result <- local (mappend argBindings) (instantiate body)
+  newEnviron  <- mappend argBindings <$> ask
+  h           <- gets heap
+  let (newHeap, result) = instantiate newEnviron h body
+  modify (\m -> m { heap = newHeap })
 
   -- Discard arguments from stack (including root)
   newStack <- gets (drop (length args + 1) . stack)
@@ -201,21 +205,29 @@ execute p = do
   void $ compile p
   stackHead >>= find
 
-instantiate :: TI sig m => CoreExpr -> m Addr
-instantiate e = case e of
-  Expr.Num i  -> store (NNum i)
-  Expr.Var n  -> lookup n
+pushEnv :: TI sig m => Env -> m a -> m a
+pushEnv e = local (mappend e)
+
+instantiate :: Env -> Heap Node -> CoreExpr -> (Heap Node, Addr)
+instantiate env heap' e = case e of
+  Expr.Num i  -> Heap.alloc (NNum i) heap'
+  Expr.Var n  -> do
+    let item = Env.lookup n env
+    (heap', fromMaybe (error (show n)) item)
   Expr.Ap f x -> do
-    fore <- instantiate f
-    aft  <- instantiate x
-    store (NAp fore aft)
+    let (heap1, fore) = instantiate env heap' f
+    let (heap2, aft)  = instantiate env heap1 x
+    Heap.alloc (NAp fore aft) heap2
   Let Non binds bod -> do
-    augmented <- traverse instantiate (Env.fromList binds)
-    local (mappend augmented) (instantiate bod)
-  Let Rec binds bod -> do
-    stage1 <- traverse (const (store NEphemeral)) (Env.fromList binds)
-    stage2 <- local (mappend stage1) (traverse instantiate (Env.fromList binds))
-    local (mappend stage2) (instantiate bod)
+    let go h (_n, e) = instantiate env h e
+    let (newHeap :: Heap Node, newVals :: [Addr]) = mapAccumL go heap' (toList binds)
+    let newBindings = Env.fromList (zip (fmap fst (toList binds)) newVals)
+    instantiate (newBindings <> env) newHeap bod
+  Let Rec binds bod -> runIdentity mdo
+    let go h (_n, e) = instantiate newBindings h e
+    (newHeap :: Heap Node, newVals :: [Addr]) <- Identity (mapAccumL go heap' (toList binds))
+    newBindings <- Identity (Env.fromList (zip (fmap fst (toList binds)) newVals))
+    pure (instantiate (newBindings <> env) newHeap bod)
 
 
 

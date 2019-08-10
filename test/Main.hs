@@ -126,7 +126,12 @@ prop_works_with_examples :: Property
 prop_works_with_examples = testCase $ do
   prog "main = S K K 3" >>= assertExecutesAs (TI.NNum 3)
   prog "main = let three = 3 in S K K 3" >>= assertExecutesAs (TI.NNum 3)
-  prog "main = letrec three = 3 in S K K 3" >>= assertExecutesAs (TI.NNum 3)
+  prog "main = letrec three = 3; tres = three in S K K tres" >>= assertExecutesAs (TI.NNum 3)
+
+  -- pair <- liftIO (parseFile parseProgram "examples/pair.mac") >>= evalEither
+  -- let (eRes, mach, stats) = TI.runTI (TI.execute pair)
+  -- assertExecutesAs (TI.NNum 3) pair
+  -- footnote (show mach)
 
 main :: IO ()
 main = void (checkParallel $$(discover))
