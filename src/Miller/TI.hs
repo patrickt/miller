@@ -14,6 +14,7 @@ import Control.Effect.Writer
 import qualified Data.Text.Prettyprint.Doc as Pretty
 import Data.Text.Prettyprint.Doc ((<+>))
 import Control.Monad.Fix
+import qualified Data.List.NonEmpty as NonEmpty
 
 import           Miller.Expr as Expr
 import           Miller.Stats (Stats)
@@ -219,16 +220,21 @@ instantiate e = case e of
     fore <- instantiate f
     aft  <- instantiate x
     state (Heap.alloc (NAp fore aft))
+
   Let Non binds bod -> do
-    let go (_name, expr) = instantiate expr
-    newVals <- traverse go (toList binds)
-    let newBindings = Env.fromList (zip (fmap fst (toList binds)) newVals)
+    -- Straightforward, nonrecursive lets
+    newVals <- traverse (instantiate . snd) binds
+    let newBindings = Env.fromList (NonEmpty.zip (fmap fst binds) newVals)
     local (newBindings <>) (instantiate bod)
+
   Let Rec binds bod -> mdo
-    let go (_name, expr) = local (newBindings <>) (instantiate e)
-    newVals <- traverse go (toList binds)
-    newBindings <- pure (Env.fromList (zip (fmap fst (toList binds)) newVals))
+    -- newVals is defined in terms of newBindings, and vice versa
+    -- laziness is absolute witchcraft and I hate/love it
+    newVals     <- traverse (local (newBindings <>) . instantiate . snd) binds
+    newBindings <- pure (Env.fromList (NonEmpty.zip (fmap fst binds) newVals))
     local (newBindings <>) (instantiate bod)
+
+
   other -> error ("unimplemented: " <> show other)
 
 
