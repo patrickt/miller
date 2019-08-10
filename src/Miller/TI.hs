@@ -75,6 +75,7 @@ data Node
   = NAp Addr Addr
   | NSupercomb Name [Name] CoreExpr
   | NNum Int
+  | NInd Addr
     deriving (Eq, Show)
 
 instance Pretty.Pretty Node where pretty = Pretty.viaShow
@@ -143,6 +144,10 @@ step = stackHead >>= find >>= \case
   NNum n -> numStep n
   NAp f x -> apStep f x
   NSupercomb name args body -> scStep name args body
+  NInd addr -> indStep addr
+
+indStep :: TI sig m => Addr -> m ()
+indStep a = modify (\m -> m { stack = a : stack m })
 
 numStep :: TI sig m => Int -> m ()
 numStep _ = throwError NumberAppliedAsFunction
@@ -183,8 +188,10 @@ scStep _name args body = do
   let (newHeap, result) = run $ runReader newEnviron $ runState h $ instantiate body
   modify (\m -> m { heap = newHeap })
 
+
   -- Discard arguments from stack (including root)
   newStack <- gets (drop (length args + 1) . stack)
+
   -- Push result onto stack
   modify (\m -> m { stack = result : newStack })
   Stats.reduction
