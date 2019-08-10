@@ -45,7 +45,7 @@ instance Pretty.Pretty TIMachine where
                 ]
 
 instance Lower TIMachine where
-  lowerBound = TIMachine [] Dump lowerBound
+  lowerBound = TIMachine [] lowerBound
 
 data Status
   = Crashed
