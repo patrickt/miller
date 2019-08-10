@@ -131,5 +131,9 @@ prop_works_with_examples = testCase $ do
   pair <- liftIO (parseFile parseProgram "examples/pair.mac") >>= evalEither
   assertExecutesAs (TI.NNum 4) pair
 
+prop_adds_updating :: Property
+prop_adds_updating = testCase $ do
+  prog "id x = x\nmain = twice twice id 3" >>= assertExecutesAs (TI.NNum 4)
+
 main :: IO ()
 main = void (checkParallel $$(discover))

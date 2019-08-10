@@ -76,5 +76,6 @@ preludeDefs = [ Defn "I" ["x"] (Var "x")
               , Defn "K" ["y", "z"] (Var "y")
               , Defn "K1" ["y", "z"] (Var "z")
               , Defn "S" ["a", "b", "c"] ((Var "a" <> Var "c") <> (Var "b" <> Var "c"))
-              , Defn "D" ["f", "g", "h"] (Var "f" <> (Var "g" <> Var "h"))
+              , Defn "compose" ["f", "g", "x"] (Var "f" <> (Var "g" <> Var "x"))
+              , Defn "twice" ["f"] ((Var "compose" <> Var "f") <> Var "f")
               ]

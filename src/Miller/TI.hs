@@ -169,6 +169,7 @@ getargs = gets stack >>= \case
   (_sc:items) -> traverse go items
     where go addr = find addr >>= \case
             NAp _fun arg -> pure arg
+            NInd arg     -> pure arg
             n            -> throwError (BadArgument n)
 
 
@@ -190,10 +191,15 @@ scStep _name args body = do
 
 
   -- Discard arguments from stack (including root)
-  newStack <- gets (drop (length args + 1) . stack)
+  st <- gets stack
+  let (currArgs, rest) = splitAt (length args + 1) st
+  traceShowM ("Stack is " :: String, currArgs, rest)
 
   -- Push result onto stack
-  modify (\m -> m { stack = result : newStack })
+  modify (\m -> m { stack = result : rest
+                  , heap  = Heap.update (last currArgs) (NInd result) (heap m)
+                  })
+
   Stats.reduction
 
 compile :: TI sig m => CoreProgram -> m [TIMachine]
