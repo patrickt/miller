@@ -1,4 +1,4 @@
-{-# LANGUAGE BlockArguments, ConstraintKinds, FlexibleContexts, FlexibleInstances, LambdaCase, OverloadedLists,
+{-# LANGUAGE ConstraintKinds, FlexibleContexts, FlexibleInstances, LambdaCase, OverloadedLists,
              OverloadedStrings, RecordWildCards, TupleSections, RecursiveDo, TypeApplications, NamedFieldPuns, ScopedTypeVariables #-}
 
 module Miller.TI where
@@ -10,7 +10,6 @@ import Control.Effect hiding (StateC)
 import Control.Effect.Error
 import Control.Effect.Reader
 import Control.Effect.State
-import Data.Functor.Identity
 import Control.Effect.Writer
 import qualified Data.Text.Prettyprint.Doc as Pretty
 import Data.Text.Prettyprint.Doc ((<+>))
@@ -36,12 +35,11 @@ type Env = Env.Env Addr
 
 data TIMachine = TIMachine
   { stack   :: Stack
-  , dump    :: Dump
   , heap    :: Heap Node -- maps Addr to Node
   } deriving (Eq, Show)
 
 instance Pretty.Pretty TIMachine where
-  pretty TIMachine{stack, dump, heap} =
+  pretty TIMachine{stack, heap} =
     Pretty.vcat [ "stack" <+> "=" <+> prettyStack stack
                 , "heap " <+> "=" <+> pretty heap
                 ]
@@ -76,7 +74,6 @@ data Node
   = NAp Addr Addr
   | NSupercomb Name [Name] CoreExpr
   | NNum Int
-  | NEphemeral
     deriving (Eq, Show)
 
 instance Pretty.Pretty Node where pretty = Pretty.viaShow
@@ -109,8 +106,8 @@ runTI = runTI' lowerBound
 
 runTI' :: TIMachine -> ReaderC Env (ErrorC TIFailure (WriterC Stats (StateC TIMachine PureC))) a -> (Either TIFailure a, TIMachine, Stats)
 runTI' start go =
-  let (mach, (stats, res)) = run . runState start . runWriter . runError . runReader @Env mempty $ go
-  in (res, mach, stats)
+  let flatten (a, (b, c)) = (c, a, b)
+  in flatten . run . runState start . runWriter . runError . runReader @Env mempty $ go
 
 -- Register an item in the heap
 store :: TI sig m => Node -> m Addr
@@ -145,7 +142,6 @@ step = stackHead >>= find >>= \case
   NNum n -> numStep n
   NAp f x -> apStep f x
   NSupercomb name args body -> scStep name args body
-    -- NSupercomb sc args body -> scStep sc args body
 
 numStep :: TI sig m => Int -> m ()
 numStep _ = throwError NumberAppliedAsFunction
@@ -161,10 +157,10 @@ lookup n = asks (Env.lookup n) >>= maybeM (throwError (UnboundName n))
 find :: TI sig m => Addr -> m Node
 find a = gets (Heap.lookup a . heap) >>= maybeM (throwError (DeadPointer a))
 
-getargs :: TI sig m => [Name] -> m [Addr]
-getargs args = gets stack >>= \case
+getargs :: TI sig m => m [Addr]
+getargs = gets stack >>= \case
   []         -> throwError EmptyStack
-  (sc:items) -> traverse go items
+  (_sc:items) -> traverse go items
     where go addr = find addr >>= \case
             NAp _fun arg -> pure arg
             n            -> throwError (BadArgument n)
@@ -173,14 +169,14 @@ getargs args = gets stack >>= \case
 
 -- UPDATES WILL BE PERFORMED HERE
 scStep :: TI sig m => Name -> [Name] -> CoreExpr -> m ()
-scStep name args body = do
+scStep _name args body = do
   given <- gets (pred . length . stack)
   let needed = length args
   when (given < needed) (throwError (TooFewArguments given needed))
   Stats.depth given
 
   -- Bind argument names to addresses
-  argBindings <- Env.fromBindings args <$> getargs args
+  argBindings <- Env.fromBindings args <$> getargs
   newEnviron  <- mappend argBindings <$> ask
   h           <- gets heap
   let (newHeap, result) = run $ runReader newEnviron $ runState h $ instantiate body
@@ -224,15 +220,16 @@ instantiate e = case e of
     aft  <- instantiate x
     state (Heap.alloc (NAp fore aft))
   Let Non binds bod -> do
-    let go (_n, e) = instantiate e
+    let go (_name, expr) = instantiate expr
     newVals <- traverse go (toList binds)
     let newBindings = Env.fromList (zip (fmap fst (toList binds)) newVals)
     local (newBindings <>) (instantiate bod)
   Let Rec binds bod -> mdo
-    let go (_n, e) = local (newBindings <>) (instantiate e)
+    let go (_name, expr) = local (newBindings <>) (instantiate e)
     newVals <- traverse go (toList binds)
     newBindings <- pure (Env.fromList (zip (fmap fst (toList binds)) newVals))
     local (newBindings <>) (instantiate bod)
+  other -> error ("unimplemented: " <> show other)
 
 
 
