@@ -183,7 +183,7 @@ scStep name args body = do
   argBindings <- Env.fromBindings args <$> getargs args
   newEnviron  <- mappend argBindings <$> ask
   h           <- gets heap
-  let (newHeap, result) = run $ runReader newEnviron $ instantiate h body
+  let (newHeap, result) = run $ runReader newEnviron $ runState h $ instantiate body
   modify (\m -> m { heap = newHeap })
 
   -- Discard arguments from stack (including root)
@@ -208,26 +208,31 @@ execute p = do
 pushEnv :: TI sig m => Env -> m a -> m a
 pushEnv e = local (mappend e)
 
-instantiate :: Heap Node -> CoreExpr -> ReaderC Env PureC (Heap Node, Addr)
-instantiate heap' e = case e of
-  Expr.Num i  -> pure (Heap.alloc (NNum i) heap')
+state :: (Member (State s) sig, Carrier sig m) => (s -> (s, a)) -> m a
+state go = do
+  (st, res) <- go <$> get
+  res <$ put st
+
+instantiate :: CoreExpr -> StateC (Heap Node) (ReaderC Env PureC) Addr
+instantiate e = case e of
+  Expr.Num i  -> state (Heap.alloc (NNum i))
   Expr.Var n  -> do
     item <- Env.lookup n <$> ask
-    pure (heap', fromMaybe (error (show n)) item)
+    pure (fromMaybe (error (show n)) item)
   Expr.Ap f x -> do
-    (heap1, fore) <- instantiate heap' f
-    (heap2, aft)  <- instantiate heap1 x
-    pure (Heap.alloc (NAp fore aft) heap2)
+    fore <- instantiate f
+    aft  <- instantiate x
+    state (Heap.alloc (NAp fore aft))
   Let Non binds bod -> do
-    let go (_n, e) = StateC (\s -> instantiate s e)
-    (newHeap :: Heap Node, newVals :: [Addr]) <- runState heap' $ traverse go (toList binds)
+    let go (_n, e) = instantiate e
+    newVals <- traverse go (toList binds)
     let newBindings = Env.fromList (zip (fmap fst (toList binds)) newVals)
-    local (newBindings <>) (instantiate newHeap bod)
+    local (newBindings <>) (instantiate bod)
   Let Rec binds bod -> mdo
-    let go (_n, e) = StateC (\s -> local (newBindings <>) (instantiate s e))
-    (newHeap :: Heap Node, newVals :: [Addr]) <- runState heap' (traverse go (toList binds))
+    let go (_n, e) = local (newBindings <>) (instantiate e)
+    newVals <- traverse go (toList binds)
     newBindings <- pure (Env.fromList (zip (fmap fst (toList binds)) newVals))
-    local (newBindings <>) (instantiate newHeap bod)
+    local (newBindings <>) (instantiate bod)
 
 
 
