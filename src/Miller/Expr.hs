@@ -8,6 +8,7 @@ module Miller.Expr
   , Expr (..)
   , ($$)
   , ($+)
+  , ($*)
   , BinOp (..)
   , CoreExpr
   , isAtomic
@@ -53,12 +54,10 @@ data Expr a
     deriving (Eq, Show, Functor)
 
 infixl 8 $$
-($$) :: Expr a -> Expr a -> Expr a
+($$), ($+), ($*) :: Expr a -> Expr a -> Expr a
 ($$) = Ap
-
-infixl 6 $+
-($+) :: Expr a -> Expr a -> Expr a
 ($+) = Binary Add
+($*) = Binary Mul
 
 
 

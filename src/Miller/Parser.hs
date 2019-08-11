@@ -25,7 +25,7 @@ identStyle = IdentifierStyle "identifier" letter (alphaNum <|> char '\'') kws HL
   kws = ["let", "letrec", "in", "case", "*", "+"]
 
 int :: (Monad m, TokenParsing m) => m Int
-int = fromIntegral <$> Token.integer
+int = fromIntegral <$> Token.natural
 
 reserved :: (Monad m, TokenParsing m) => Text -> m ()
 reserved = Token.reserveText identStyle
@@ -50,6 +50,7 @@ operators :: (Monad m, TokenParsing m) => OperatorTable m CoreExpr
 operators =
   let _binary tok typ = Infix (Binary typ <$ reserved tok) AssocLeft
   in [ [Infix (pure Ap) AssocLeft]
+     , [Infix (Binary Mul <$ reserved "*") AssocLeft]
      , [Infix (Binary Add <$ reserved "+") AssocLeft]
      ]
 

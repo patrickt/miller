@@ -66,10 +66,17 @@ prop_associativity_works = testCase $ do
   res === ((Var "f" $$ Var "g") $$ Var "h") $$ Var "i"
   res === Var "f" $$ Var "g" $$ Var "h" $$ Var "i"
 
--- prop_int_exprs_parse :: Property
--- prop_int_exprs_parse = testCase $ do
---   res <- evalEither (parse parseExpr "1 + 2 + 3")
---   res === (Num 1 $+ Num 2) $+ Num 3
+prop_int_exprs_parse :: Property
+prop_int_exprs_parse = testCase $ do
+  add <- assertParses parseExpr "1 * 2 * 3"
+  add === Num 1 $* Num 2 $* Num 3
+  mul <- assertParses parseExpr "1 + 2 + 3"
+  mul === Num 1 $+ Num 2 $+ Num 3
+
+prop_operator_precedence_works :: Property
+prop_operator_precedence_works = testCase $ do
+  mixed <- assertParses parseExpr "5 * 2 + 1"
+  mixed === (Num 5 $* Num 2) $+ Num 1
 
 prop_expressions_roundtrip :: Property
 prop_expressions_roundtrip = property $ do
