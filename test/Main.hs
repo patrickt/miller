@@ -133,7 +133,7 @@ prop_works_with_examples = testCase $ do
 
 prop_adds_updating :: Property
 prop_adds_updating = testCase $ do
-  prog "id x = x\nmain = twice twice id 3" >>= assertExecutesAs (TI.NNum 4)
+  prog "id x = x\nmain = twice twice id 3" >>= assertExecutesAs (TI.NNum 3)
 
 main :: IO ()
 main = void (checkParallel $$(discover))

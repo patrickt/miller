@@ -10,6 +10,7 @@ import           Control.Applicative
 import           Control.Monad
 import           Data.List.NonEmpty
 import           Data.Text (Text)
+import           Text.Parser.Expression
 import           Text.Parser.Token as Token
 import qualified Text.Parser.Token.Highlight as HL
 import           Text.Trifecta
@@ -21,7 +22,7 @@ keywords = ["let", "letrec", "in", "case"]
 
 identStyle :: (Alternative m, CharParsing m) => Token.IdentifierStyle m
 identStyle = IdentifierStyle "identifier" letter (alphaNum <|> char '\'') kws HL.Identifier HL.ReservedIdentifier where
-  kws = ["let", "letrec", "in", "case"]
+  kws = ["let", "letrec", "in", "case", "*"]
 
 int :: (Monad m, TokenParsing m) => m Int
 int = fromIntegral <$> Token.integer
@@ -35,23 +36,27 @@ parseName = Name <$> Token.ident identStyle
 parseDefn :: (Monad m, TokenParsing m) => m CoreDefn
 parseDefn = Defn <$> parseName <*> many parseName <*> (equals *> parseExpr)
 
-parseExpr :: (Monad m, TokenParsing m) => m CoreExpr
-parseExpr = choice
-  [ Let  <$> parseRec <*> bindings <*> (reserved "in" *> parseExpr)
+parseAtomic :: (Monad m, TokenParsing m) => m CoreExpr
+parseAtomic = choice
+  [ parens parseExpr
+  , Let  <$> parseRec <*> bindings <*> (reserved "in" *> parseExpr)
   , Case <$> (reserved "case" *> parseExpr <* reserved "of") <*> cases
   , Lam  <$> (lambda *> many parseName) <*> (symbol "->" *> parseExpr)
-  , parseAtomic `chainl1` pure Ap
+  , Num <$> int
+  , Var <$> parseName
   ]
+
+operators :: (Monad m, TokenParsing m) => OperatorTable m CoreExpr
+operators =
+  let _binary tok typ = Infix (Binary typ <$ reserved tok) AssocLeft
+  in [ [Infix (pure Ap) AssocLeft]
+     ]
+
+parseExpr :: (Monad m, TokenParsing m) => m CoreExpr
+parseExpr = buildExpressionParser operators parseAtomic
 
 equals :: TokenParsing m => m ()
 equals = void (symbolic '=')
-
-parseAtomic :: (Monad m, TokenParsing m) => m CoreExpr
-parseAtomic = choice
-  [ Num <$> int
-  , Var <$> parseName
-  , parens parseExpr
-  ]
 
 bindings :: (Monad m, TokenParsing m) => m (NonEmpty (Name, CoreExpr))
 bindings = go `sepByNonEmpty` (symbolic ';') where

@@ -71,4 +71,7 @@ prettyExpr = precBody . go
       Let r bs body -> prec 3 (prettyRec r <+> prettyBindings bs <+> "in" <+> withPrec 0 (go body))
       Case v alts -> prec 3 ("case" <+> precBody (go v) <+> "of" <+> prettyAlts alts)
       Lam vs bod -> prec 3 ("λ" <> hsep (pretty <$> vs) <+> "->" <+> precBody (go bod))
+      Binary Add l r -> prec 6 (withPrec 7 (go l) <+> "+" <+> withPrec 6 (go r))
+      Binary Sub l r -> prec 6 (withPrec 7 (go l) <+> "-" <+> withPrec 6 (go r))
+      Binary Mul l r -> prec 7 (withPrec 8 (go l) <+> "+" <+> withPrec 7 (go r))
 

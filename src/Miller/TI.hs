@@ -193,7 +193,6 @@ scStep _name args body = do
   -- Discard arguments from stack (including root)
   st <- gets stack
   let (currArgs, rest) = splitAt (length args + 1) st
-  traceShowM ("Stack is " :: String, currArgs, rest)
 
   -- Push result onto stack
   modify (\m -> m { stack = result : rest

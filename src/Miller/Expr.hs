@@ -6,6 +6,7 @@ module Miller.Expr
   ( Name (..)
   , Rec (..)
   , Expr (..)
+  , BinOp (..)
   , CoreExpr
   , isAtomic
   , Defn (..)
@@ -32,6 +33,12 @@ instance Pretty Rec where
   pretty Rec = "letrec"
   pretty Non = "let"
 
+data BinOp
+  = Add
+  | Sub
+  | Mul
+    deriving (Eq, Show)
+
 data Expr a
   = Var Name
   | Num Int
@@ -40,6 +47,7 @@ data Expr a
   | Let Rec (NonEmpty (a, Expr a)) (Expr a)
   | Case (Expr a) (NonEmpty (Int, [a], Expr a))
   | Lam [a] (Expr a)
+  | Binary BinOp (Expr a) (Expr a)
     deriving (Eq, Show, Functor)
 
 instance Semigroup (Expr a) where
