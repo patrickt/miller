@@ -6,6 +6,8 @@ module Miller.Expr
   ( Name (..)
   , Rec (..)
   , Expr (..)
+  , ($$)
+  , ($+)
   , BinOp (..)
   , CoreExpr
   , isAtomic
@@ -49,6 +51,16 @@ data Expr a
   | Lam [a] (Expr a)
   | Binary BinOp (Expr a) (Expr a)
     deriving (Eq, Show, Functor)
+
+infixl 8 $$
+($$) :: Expr a -> Expr a -> Expr a
+($$) = Ap
+
+infixl 6 $+
+($+) :: Expr a -> Expr a -> Expr a
+($+) = Binary Add
+
+
 
 instance Semigroup (Expr a) where
   (<>) = Ap

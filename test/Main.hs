@@ -6,10 +6,13 @@ import Doors
 
 import Hedgehog hiding (Var (..))
 import qualified Hedgehog.Gen as Gen
+import           Hedgehog.Internal.Property (failWith)
 import qualified Hedgehog.Internal.Gen as Gen (ensure)
 import qualified Hedgehog.Range as Range
 import Text.Trifecta as Trifecta
+import qualified Text.Trifecta.Result as Result
 import Data.List (nub)
+import GHC.Stack
 
 import Miller.Expr as Expr
 import Miller.Pretty as Pretty
@@ -53,6 +56,21 @@ prop_parens_in_nested_app = testCase $ do
   showExpr ex1 === "f (g x) (h y)"
   tripping ex1 Pretty.showExpr (parse parseExpr)
 
+assertParses :: (HasCallStack, MonadTest m) => Parser a -> String -> m a
+assertParses p s = foldResult describe pure (parseString (p <* eof) mempty s)where
+  describe info = withFrozenCallStack $ failWith Nothing $ renderDoc (() <$ _errDoc info)
+
+prop_associativity_works :: HasCallStack => Property
+prop_associativity_works = testCase $ do
+  res <- assertParses parseExpr "f g h i"
+  res === ((Var "f" $$ Var "g") $$ Var "h") $$ Var "i"
+  res === Var "f" $$ Var "g" $$ Var "h" $$ Var "i"
+
+-- prop_int_exprs_parse :: Property
+-- prop_int_exprs_parse = testCase $ do
+--   res <- evalEither (parse parseExpr "1 + 2 + 3")
+--   res === (Num 1 $+ Num 2) $+ Num 3
+
 prop_expressions_roundtrip :: Property
 prop_expressions_roundtrip = property $ do
   expr <- forAll additive
@@ -61,7 +79,7 @@ prop_expressions_roundtrip = property $ do
 prop_fixtures_roundtrip :: Property
 prop_fixtures_roundtrip = testCase $ do
   let go f = do
-        item <- liftIO (parseFile parseProgram f) >>= Hedgehog.evalEither
+        item <- liftIO (readFile f) >>= assertParses parseProgram
         tripping item Pretty.showProgram (parse (parseProgram <* eof))
 
   go "examples/double.mac"
@@ -115,7 +133,7 @@ assertFailsWith e p = do
   eRes === Left e
 
 prog :: MonadTest m => String -> m CoreProgram
-prog p = evalEither (Trifecta.foldResult (Left . show) Right . parseString (parseProgram <* eof) mempty $ p)
+prog = assertParses parseProgram
 
 prop_handles_too_few_args :: Property
 prop_handles_too_few_args = testCase $ do

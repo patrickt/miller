@@ -1,0 +1,9 @@
+packages: .
+
+jobs: $ncpus
+
+source-repository-package
+  type: git
+  location: https://github.com/ekmett/trifecta
+  tag: 5bce5a83de73193a4749511eadc7442f3885c163
+

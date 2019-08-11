@@ -22,7 +22,7 @@ keywords = ["let", "letrec", "in", "case"]
 
 identStyle :: (Alternative m, CharParsing m) => Token.IdentifierStyle m
 identStyle = IdentifierStyle "identifier" letter (alphaNum <|> char '\'') kws HL.Identifier HL.ReservedIdentifier where
-  kws = ["let", "letrec", "in", "case", "*"]
+  kws = ["let", "letrec", "in", "case", "*", "+"]
 
 int :: (Monad m, TokenParsing m) => m Int
 int = fromIntegral <$> Token.integer
@@ -50,6 +50,7 @@ operators :: (Monad m, TokenParsing m) => OperatorTable m CoreExpr
 operators =
   let _binary tok typ = Infix (Binary typ <$ reserved tok) AssocLeft
   in [ [Infix (pure Ap) AssocLeft]
+     , [Infix (Binary Add <$ reserved "+") AssocLeft]
      ]
 
 parseExpr :: (Monad m, TokenParsing m) => m CoreExpr

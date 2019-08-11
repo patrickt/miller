@@ -4,6 +4,7 @@ module Miller.Pretty
   ( showExpr
   , showProgram
   , renderShow
+  , renderDoc
   ) where
 
 import Doors
@@ -13,14 +14,17 @@ import qualified Data.Text.Prettyprint.Doc.Render.String as Pretty
 
 import Miller.Expr
 
+renderDoc :: Doc a -> String
+renderDoc = Pretty.renderString . layoutSmart defaultLayoutOptions
+
 renderShow :: Pretty a => a -> String
-renderShow = Pretty.renderString . layoutSmart defaultLayoutOptions . pretty
+renderShow = renderDoc . pretty
 
 showExpr :: CoreExpr -> String
-showExpr = Pretty.renderString . layoutSmart defaultLayoutOptions . prettyExpr
+showExpr = renderDoc . prettyExpr
 
 showProgram :: CoreProgram -> String
-showProgram = Pretty.renderString . layoutSmart defaultLayoutOptions . prettyProgram
+showProgram = renderDoc . prettyProgram
 
 prettyProgram :: CoreProgram -> Doc a
 prettyProgram (Program ps) = vsep . toList $ fmap prettyDefn ps

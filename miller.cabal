@@ -27,8 +27,8 @@ common shared
                   , semilattices ^>= 0.0.0.3
                   , streams ^>= 3.3
                   , text ^>= 1.2.3.1
-                  , trifecta >= 2
-                  , unordered-containers
+                  , trifecta ^>= 2.1
+                  , unordered-containers ^>= 0.2.10
 
 library
   import:              shared
