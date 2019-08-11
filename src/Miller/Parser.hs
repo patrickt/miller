@@ -48,10 +48,10 @@ parseAtomic = choice
 
 operators :: (Monad m, TokenParsing m) => OperatorTable m CoreExpr
 operators =
-  let _binary tok typ = Infix (Binary typ <$ reserved tok) AssocLeft
+  let binary tok typ = Infix (Binary typ <$ reserved tok) AssocLeft
   in [ [Infix (pure Ap) AssocLeft]
-     , [Infix (Binary Mul <$ reserved "*") AssocLeft]
-     , [Infix (Binary Add <$ reserved "+") AssocLeft]
+     , [binary "*" Mul ]
+     , [binary "+" Add ]
      ]
 
 parseExpr :: (Monad m, TokenParsing m) => m CoreExpr
