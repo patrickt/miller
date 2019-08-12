@@ -22,7 +22,7 @@ keywords = ["let", "letrec", "in", "case"]
 
 identStyle :: (Alternative m, CharParsing m) => Token.IdentifierStyle m
 identStyle = IdentifierStyle "identifier" letter (alphaNum <|> char '\'') kws HL.Identifier HL.ReservedIdentifier where
-  kws = ["let", "letrec", "in", "case", "*", "+"]
+  kws = ["let", "letrec", "in", "case", "*", "+", "-", "~"]
 
 int :: (Monad m, TokenParsing m) => m Int
 int = fromIntegral <$> Token.natural
@@ -49,12 +49,14 @@ parseAtomic = choice
 operators :: (Monad m, TokenParsing m) => OperatorTable m CoreExpr
 operators =
   let binary tok typ = Infix (Binary typ <$ reserved tok) AssocLeft
-  in [ [binary "*" Mul ]
+      prefix tok typ = Prefix (Unary typ <$ symbolic tok)
+  in [ [prefix '~' Neg ]
+     , [binary "*" Mul ]
      , [binary "+" Add, binary "-" Sub ]
      ]
 
 parseExpr :: (Monad m, TokenParsing m) => m CoreExpr
-parseExpr = buildExpressionParser operators parseAtomic `chainl1` pure Ap
+parseExpr = buildExpressionParser operators parseAtomic `chainl1` pure Ap <?> "expression"
 
 equals :: TokenParsing m => m ()
 equals = void (symbolic '=')

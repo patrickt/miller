@@ -77,6 +77,11 @@ prop_int_exprs_parse = testCase $ do
   par <- assertParses parseExpr "1 - (2 + 4)"
   par === Num 1 $- (Num 2 $+ Num 4)
 
+prop_negate_works :: Property
+prop_negate_works = testCase $ do
+  neg <- assertParses parseExpr "~1"
+  neg === Unary Neg (Num 1)
+
 prop_operator_precedence_works :: Property
 prop_operator_precedence_works = testCase $ do
   mixed <- assertParses parseExpr "5 * 2 + 1"
