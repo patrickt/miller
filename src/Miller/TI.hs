@@ -248,8 +248,8 @@ instantiate e = case e of
   Let Rec binds bod -> mdo
     -- newVals is defined in terms of newBindings, and vice versa
     -- laziness is absolute witchcraft and I hate/love it
-    newVals     <- traverse (local (newBindings <>) . instantiate . snd) binds
-    newBindings <- pure (Env.fromList (NonEmpty.zip (fmap fst binds) newVals))
+    newVals <- traverse (local (newBindings <>) . instantiate . snd) binds
+    let newBindings = Env.fromList (NonEmpty.zip (fmap fst binds) newVals)
     local (newBindings <>) (instantiate bod)
 
 
