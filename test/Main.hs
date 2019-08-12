@@ -72,6 +72,10 @@ prop_int_exprs_parse = testCase $ do
   add === Num 1 $* Num 2 $* Num 3
   mul <- assertParses parseExpr "1 + 2 + 3"
   mul === Num 1 $+ Num 2 $+ Num 3
+  mix <- assertParses parseExpr "1 - 2 + 4"
+  mix === Num 1 $- Num 2 $+ Num 4
+  par <- assertParses parseExpr "1 - (2 + 4)"
+  par === Num 1 $- (Num 2 $+ Num 4)
 
 prop_operator_precedence_works :: Property
 prop_operator_precedence_works = testCase $ do

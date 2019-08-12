@@ -78,5 +78,5 @@ prettyExpr = precBody . go
       Binary Add l r -> prec 6 (withPrec 7 (go l) <+> "+" <+> withPrec 6 (go r))
       Binary Sub l r -> prec 6 (withPrec 7 (go l) <+> "-" <+> withPrec 6 (go r))
       Binary Mul l r -> prec 7 (withPrec 8 (go l) <+> "+" <+> withPrec 7 (go r))
-      Unary Neg it   -> prec 9 ("-" <+> withPrec 10 (go it))
+      Unary Neg it   -> prec 1 ("-" <+> withPrec 3 (go it))
 

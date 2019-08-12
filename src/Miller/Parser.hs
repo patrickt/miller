@@ -51,7 +51,7 @@ operators =
   let binary tok typ = Infix (Binary typ <$ reserved tok) AssocLeft
   in [ [Infix (pure Ap) AssocLeft]
      , [binary "*" Mul ]
-     , [binary "+" Add ]
+     , [binary "+" Add, binary "-" Sub ]
      ]
 
 parseExpr :: (Monad m, TokenParsing m) => m CoreExpr
