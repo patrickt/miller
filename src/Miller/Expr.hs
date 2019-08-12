@@ -9,6 +9,7 @@ module Miller.Expr
   , ($$)
   , ($+)
   , ($*)
+  , ($-)
   , BinOp (..)
   , UnOp (..)
   , CoreExpr
@@ -58,10 +59,14 @@ data Expr a
     deriving (Eq, Show, Functor)
 
 infixl 8 $$
-($$), ($+), ($*) :: Expr a -> Expr a -> Expr a
+infixl 7 $*
+infixl 6 $-
+infixl 6 $+
+($$), ($+), ($*), ($-) :: Expr a -> Expr a -> Expr a
 ($$) = Ap
 ($+) = Binary Add
 ($*) = Binary Mul
+($-) = Binary Sub
 
 
 
