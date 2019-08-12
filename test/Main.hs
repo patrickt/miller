@@ -79,7 +79,7 @@ prop_int_exprs_parse = testCase $ do
 
 prop_negate_works :: Property
 prop_negate_works = testCase $ do
-  neg <- assertParses parseExpr "~1"
+  neg <- assertParses parseExpr "-1"
   neg === Unary Neg (Num 1)
 
 prop_operator_precedence_works :: Property
