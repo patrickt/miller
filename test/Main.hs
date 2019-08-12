@@ -42,11 +42,11 @@ name :: Gen Name
 name = Name <$> Gen.ensure (`notElem` Parser.keywords) go
   where go = Gen.prune (Gen.text (Range.linear 3 6) Gen.alpha)
 
-additive :: Gen CoreExpr
-additive = Gen.recursive Gen.choice recurs nonrecurs
+applying :: Gen CoreExpr
+applying = Gen.recursive Gen.choice recurs nonrecurs
   where
     recurs    = [Var <$> name, Num <$> Gen.integral (Range.linear 1 10)]
-    nonrecurs = [Gen.subterm2 (Var <$> name) additive Ap]
+    nonrecurs = [Gen.subterm2 (Var <$> name) applying Ap]
 
 testCase = withTests 1 . property
 
@@ -80,7 +80,7 @@ prop_operator_precedence_works = testCase $ do
 
 prop_expressions_roundtrip :: Property
 prop_expressions_roundtrip = property $ do
-  expr <- forAll additive
+  expr <- forAll applying
   tripping expr Pretty.showExpr (parse parseExpr)
 
 prop_fixtures_roundtrip :: Property
