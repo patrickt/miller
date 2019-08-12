@@ -48,6 +48,7 @@ applying = Gen.recursive Gen.choice recurs nonrecurs
     recurs    = [Var <$> name, Num <$> Gen.integral (Range.linear 1 10)]
     nonrecurs = [Gen.subterm2 (Var <$> name) applying Ap]
 
+testCase :: HasCallStack => PropertyT IO () -> Property
 testCase = withTests 1 . property
 
 prop_parens_in_nested_app :: Property

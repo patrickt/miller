@@ -221,7 +221,14 @@ execute p = do
   void $ compile p
   stackHead >>= find
 
-instantiate :: CoreExpr -> StateC (Heap Node) (ReaderC Env PureC) Addr
+-- | This function diverges if it is called inside a strict monad,
+-- so we can't use it with Writer.
+instantiate :: ( Member (Reader Env) sig
+               , Member (State (Heap Node)) sig
+               , MonadFix m
+               , Carrier sig m
+               )
+            => CoreExpr -> m Addr
 instantiate e = case e of
   Expr.Num i  -> state (Heap.alloc (NNum i))
   Expr.Var n  -> do
