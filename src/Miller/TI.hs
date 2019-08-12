@@ -39,6 +39,9 @@ data TIMachine = TIMachine
   , heap    :: Heap Node -- maps Addr to Node
   } deriving (Eq, Show)
 
+push :: Addr -> TIMachine -> TIMachine
+push a m = m { stack = a : stack m }
+
 instance Pretty.Pretty TIMachine where
   pretty TIMachine{stack, heap} =
     Pretty.vcat [ "stack" <+> "=" <+> prettyStack stack
@@ -76,7 +79,7 @@ data Node
   | NSupercomb Name [Name] CoreExpr
   | NNum Int
   | NInd Addr
-  | NPrim Binary
+  | NPrim BinOp
     deriving (Eq, Show)
 
 instance Pretty.Pretty Node where pretty = Pretty.viaShow
@@ -92,7 +95,7 @@ data TIFailure
   | DeadPointer Addr
   | TooFewArguments Int Int
   | BadArgument Node
-  | Unimplemented CoreExpr
+  | Unimplemented String
     deriving (Eq, Show)
 
 type TI sig m = ( Member (State TIMachine) sig
@@ -146,9 +149,10 @@ step = stackHead >>= find >>= \case
   NAp f x -> apStep f x
   NSupercomb name args body -> scStep name args body
   NInd addr -> indStep addr
+  NPrim op -> primStep op
 
 indStep :: TI sig m => Addr -> m ()
-indStep a = modify (\m -> m { stack = a : stack m })
+indStep a = modify (push a)
 
 numStep :: TI sig m => Int -> m ()
 numStep _ = throwError NumberAppliedAsFunction
@@ -156,7 +160,7 @@ numStep _ = throwError NumberAppliedAsFunction
 -- As per the unwind rule, we look leftwards and downwards
 -- to get the current thing to apply, so we only look in 'f'.
 apStep :: TI sig m => Addr -> Addr -> m ()
-apStep f _x = modify (\m -> m { stack = f : stack m })
+apStep f _x = modify (push f)
 
 lookup :: TI sig m => Name -> m Addr
 lookup n = asks (Env.lookup n) >>= maybeM (throwError (UnboundName n))
@@ -164,15 +168,17 @@ lookup n = asks (Env.lookup n) >>= maybeM (throwError (UnboundName n))
 find :: TI sig m => Addr -> m Node
 find a = gets (Heap.lookup a . heap) >>= maybeM (throwError (DeadPointer a))
 
-getargs :: TI sig m => m [Addr]
-getargs = gets stack >>= \case
-  []         -> throwError EmptyStack
+argumentAddresses :: TI sig m => m [Addr]
+argumentAddresses = gets stack >>= \case
+  []          -> throwError EmptyStack
   (_sc:items) -> traverse go items
     where go addr = find addr >>= \case
             NAp _fun arg -> pure arg
             NInd arg     -> pure arg
             n            -> throwError (BadArgument n)
 
+primStep :: TI sig m => BinOp -> m ()
+primStep = throwError . Unimplemented . show
 
 
 -- UPDATES WILL BE PERFORMED HERE
@@ -184,7 +190,7 @@ scStep _name args body = do
   Stats.depth given
 
   -- Bind argument names to addresses
-  argBindings <- Env.fromBindings args <$> getargs
+  argBindings <- Env.fromBindings args <$> argumentAddresses
   newEnviron  <- mappend argBindings <$> ask
   h           <- gets heap
   let (newHeap, result) = run $ runReader newEnviron $ runState h $ instantiate body
@@ -207,21 +213,13 @@ compile ps = do
   toplevels <- Env.fromList <$> traverse allocateSC (unProgram (preludeDefs <> ps))
   local (mappend toplevels) $ do
     main <- lookup "main"
-    modify (\m -> m { stack = [main] })
+    modify (push main)
     eval
 
 execute :: TI sig m => CoreProgram -> m Node
 execute p = do
   void $ compile p
   stackHead >>= find
-
-pushEnv :: TI sig m => Env -> m a -> m a
-pushEnv e = local (mappend e)
-
-state :: (Member (State s) sig, Carrier sig m) => (s -> (s, a)) -> m a
-state go = do
-  (st, res) <- go <$> get
-  res <$ put st
 
 instantiate :: CoreExpr -> StateC (Heap Node) (ReaderC Env PureC) Addr
 instantiate e = case e of
@@ -249,3 +247,8 @@ instantiate e = case e of
 
 
   other -> error ("unimplemented: " <> show other)
+
+state :: (Member (State s) sig, Carrier sig m) => (s -> (s, a)) -> m a
+state go = do
+  (st, res) <- gets go
+  res <$ put st

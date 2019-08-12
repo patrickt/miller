@@ -10,6 +10,7 @@ module Miller.Expr
   , ($+)
   , ($*)
   , BinOp (..)
+  , UnOp (..)
   , CoreExpr
   , isAtomic
   , Defn (..)
@@ -42,6 +43,8 @@ data BinOp
   | Mul
     deriving (Eq, Show)
 
+data UnOp = Neg deriving (Eq, Show)
+
 data Expr a
   = Var Name
   | Num Int
@@ -51,6 +54,7 @@ data Expr a
   | Case (Expr a) (NonEmpty (Int, [a], Expr a))
   | Lam [a] (Expr a)
   | Binary BinOp (Expr a) (Expr a)
+  | Unary UnOp (Expr a)
     deriving (Eq, Show, Functor)
 
 infixl 8 $$
