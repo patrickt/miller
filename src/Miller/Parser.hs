@@ -49,13 +49,12 @@ parseAtomic = choice
 operators :: (Monad m, TokenParsing m) => OperatorTable m CoreExpr
 operators =
   let binary tok typ = Infix (Binary typ <$ reserved tok) AssocLeft
-  in [ [Infix (pure Ap) AssocLeft]
-     , [binary "*" Mul ]
+  in [ [binary "*" Mul ]
      , [binary "+" Add, binary "-" Sub ]
      ]
 
 parseExpr :: (Monad m, TokenParsing m) => m CoreExpr
-parseExpr = buildExpressionParser operators parseAtomic
+parseExpr = buildExpressionParser operators parseAtomic `chainl1` pure Ap
 
 equals :: TokenParsing m => m ()
 equals = void (symbolic '=')
