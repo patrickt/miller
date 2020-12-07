@@ -45,7 +45,7 @@ library
                      -- , Miller.Typecheck
 
 
-test-suite test
+test-suite miller-test
   import:         shared
   hs-source-dirs: test
   type:           exitcode-stdio-1.0

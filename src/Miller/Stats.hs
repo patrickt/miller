@@ -18,7 +18,6 @@ import Data.Monoid
 import Data.Monoid.Generic
 import Data.Semigroup
 import Data.Text.Prettyprint.Doc
-import Doors
 import GHC.Generics
 
 data Stats = Stats
