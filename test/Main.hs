@@ -1,36 +1,37 @@
-{-# LANGUAGE OverloadedLists, OverloadedStrings, TemplateHaskell #-}
+{-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Main where
 
-import Doors
-
-import Hedgehog hiding (Var (..))
-import qualified Hedgehog.Gen as Gen
-import           Hedgehog.Internal.Property (failWith)
-import qualified Hedgehog.Internal.Gen as Gen (ensure)
-import qualified Hedgehog.Range as Range
-import Text.Trifecta as Trifecta
-import qualified Text.Trifecta.Result as Result
 import Data.List (nub)
+import Doors
 import GHC.Stack
-
+import Hedgehog hiding (Var (..))
+import Hedgehog.Gen qualified as Gen
+import Hedgehog.Internal.Gen qualified as Gen (ensure)
+import Hedgehog.Internal.Property (failWith)
+import Hedgehog.Range qualified as Range
 import Miller.Expr as Expr
-import Miller.Pretty as Pretty
 import Miller.Parser as Parser
-import qualified Miller.TI as TI
-import qualified Miller.TI.Heap as Heap
-import qualified Miller.Stats as Stats
-import qualified Miller.TI.Env as Env
-
+import Miller.Pretty as Pretty
+import Miller.Stats qualified as Stats
+import Miller.TI qualified as TI
+import Miller.TI.Env qualified as Env
+import Miller.TI.Heap qualified as Heap
+import Text.Trifecta as Trifecta
+import Text.Trifecta.Result qualified as Result
 
 xPlusY :: CoreExpr
 xPlusY = Ap (Ap (Var "+") (Var "x")) (Var "y")
 
 double :: CoreProgram
-double = Program [ Defn "main" [] (Ap (Var "double") (Num 21))
-               , Defn "double" ["x"] (Ap (Ap (Var "add") (Var "x")) (Var "x"))
-               ]
-
+double =
+  Program
+    [ Defn "main" [] (Ap (Var "double") (Num 21)),
+      Defn "double" ["x"] (Ap (Ap (Var "add") (Var "x")) (Var "x"))
+    ]
 
 parse :: Parser a -> String -> Either String a
 parse p = Trifecta.foldResult (Left . show) Right . parseString (p <* eof) mempty
@@ -40,12 +41,13 @@ parseFile p f = Trifecta.foldResult (Left . show) Right <$> Trifecta.parseFromFi
 
 name :: Gen Name
 name = Name <$> Gen.ensure (`notElem` Parser.keywords) go
-  where go = Gen.prune (Gen.text (Range.linear 3 6) Gen.alpha)
+  where
+    go = Gen.prune (Gen.text (Range.linear 3 6) Gen.alpha)
 
 applying :: Gen CoreExpr
 applying = Gen.recursive Gen.choice recurs nonrecurs
   where
-    recurs    = [Var <$> name, Num <$> Gen.integral (Range.linear 1 10)]
+    recurs = [Var <$> name, Num <$> Gen.integral (Range.linear 1 10)]
     nonrecurs = [Gen.subterm2 (Var <$> name) applying Ap]
 
 testCase :: HasCallStack => PropertyT IO () -> Property
@@ -58,8 +60,9 @@ prop_parens_in_nested_app = testCase $ do
   tripping ex1 Pretty.showExpr (parse parseExpr)
 
 assertParses :: (HasCallStack, MonadTest m) => Parser a -> String -> m a
-assertParses p s = foldResult describe pure (parseString (p <* eof) mempty s)where
-  describe info = withFrozenCallStack $ failWith Nothing $ renderDoc (() <$ _errDoc info)
+assertParses p s = foldResult describe pure (parseString (p <* eof) mempty s)
+  where
+    describe info = withFrozenCallStack $ failWith Nothing $ renderDoc (() <$ _errDoc info)
 
 prop_associativity_works :: HasCallStack => Property
 prop_associativity_works = testCase $ do
@@ -129,8 +132,9 @@ prop_eval_finalized_machine_is_noop = testCase $ do
 
 prop_instantiate_fails_when_applying_two_naturals :: Property
 prop_instantiate_fails_when_applying_two_naturals = testCase $ do
-  let (eRes, _mach, _stats) = TI.runTI $
-        TI.compile [Defn "main" [] (Expr.Ap (Expr.Num 1) (Expr.Num 2))]
+  let (eRes, _mach, _stats) =
+        TI.runTI $
+          TI.compile [Defn "main" [] (Expr.Ap (Expr.Num 1) (Expr.Num 2))]
 
   eRes === Left TI.NumberAppliedAsFunction
 

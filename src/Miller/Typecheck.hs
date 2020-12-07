@@ -1,32 +1,37 @@
-{-# LANGUAGE DeriveAnyClass, DeriveGeneric, OverloadedStrings, LambdaCase, OverloadedLists, TypeApplications, PartialTypeSignatures #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 
 module Miller.Typecheck where
 
+import Control.Effect
+import Control.Effect.Error
+import Control.Effect.Fresh
+import Control.Effect.Reader
+import Control.Effect.State
+import Data.Coerce
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HashMap
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
 import Data.Hashable
-import Doors
-import Data.Coerce
-import GHC.Generics
-
-import Control.Effect
-import Control.Effect.Reader
-import Control.Effect.Error
-import Control.Effect.Fresh
-import Control.Effect.State
-
 import Data.Text.Prettyprint.Doc (Doc, Pretty (..), (<+>))
 import qualified Data.Text.Prettyprint.Doc as Pretty
+import Doors
+import GHC.Generics
 
-data Exp = EVar String
-         | ELit Lit
-         | EApp Exp Exp
-         | EAbs String Exp
-         | ELet String Exp Exp
-           deriving (Eq, Show, Generic, Hashable)
+data Exp
+  = EVar String
+  | ELit Lit
+  | EApp Exp Exp
+  | EAbs String Exp
+  | ELet String Exp Exp
+  deriving (Eq, Show, Generic, Hashable)
 
 instance Pretty Exp where
   pretty = \case
@@ -36,26 +41,28 @@ instance Pretty Exp where
     EAbs s e -> "λ" <> pretty s <+> "→" <+> pretty e
     ELet n e b -> "let" <+> pretty n <+> "=" <+> pretty e <+> "in" <+> pretty b
 
-data Lit = LInt Integer
-         | LBool Bool
-           deriving (Eq, Show, Generic, Hashable)
+data Lit
+  = LInt Integer
+  | LBool Bool
+  deriving (Eq, Show, Generic, Hashable)
 
 instance Pretty Lit where
   pretty = \case
     LInt i -> pretty i
     LBool b -> pretty b
 
-data Type = TVar String
-          | TInt
-          | TBool
-          | TFun Type Type
-            deriving (Eq, Show, Generic, Hashable)
+data Type
+  = TVar String
+  | TInt
+  | TBool
+  | TFun Type Type
+  deriving (Eq, Show, Generic, Hashable)
 
 instance Pretty Type where
   pretty = \case
-    TVar s   -> pretty s
-    TInt     -> "Int"
-    TBool    -> "Bool"
+    TVar s -> pretty s
+    TInt -> "Int"
+    TBool -> "Bool"
     TFun a b -> Pretty.parens (pretty a <+> "→" <+> pretty b)
 
 data Scheme = Scheme [String] Type deriving (Eq, Show)
@@ -81,7 +88,7 @@ instance Types Type where
     TVar s -> [s]
     TInt -> mempty
     TBool -> mempty
-    TFun f x  -> ftv f <> ftv x
+    TFun f x -> ftv f <> ftv x
   apply s = \case
     TVar n -> fromMaybe (TVar n) (HashMap.lookup n s)
     TFun f x -> TFun (apply s f) (apply s x)
@@ -91,7 +98,7 @@ instance Types Scheme where
   ftv (Scheme vars t) = HashSet.difference (ftv t) (HashSet.fromList vars)
   apply s (Scheme vars t) = Scheme vars (apply (foldr HashMap.delete s vars) t)
 
-newtype TypeEnv = TypeEnv { unTypeEnv :: HashMap String Scheme }
+newtype TypeEnv = TypeEnv {unTypeEnv :: HashMap String Scheme}
 
 remove :: String -> TypeEnv -> TypeEnv
 remove = coerce (HashMap.delete @String @Scheme)

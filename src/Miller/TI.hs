@@ -1,27 +1,36 @@
-{-# LANGUAGE ConstraintKinds, FlexibleContexts, FlexibleInstances, LambdaCase, OverloadedLists,
-             OverloadedStrings, RecordWildCards, TupleSections, RecursiveDo, TypeApplications, NamedFieldPuns, ScopedTypeVariables #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Miller.TI where
 
-import Doors hiding (find)
-import Prelude hiding (lookup)
-
-import Control.Effect hiding (StateC)
-import Control.Effect.Error
-import Control.Effect.Reader
-import Control.Effect.State
-import Control.Effect.Writer
-import qualified Data.Text.Prettyprint.Doc as Pretty
-import Data.Text.Prettyprint.Doc ((<+>))
+import Control.Carrier.Error.Either
+import Control.Carrier.Reader
+import Control.Carrier.State.Lazy
+import Control.Carrier.Writer.Strict
 import Control.Monad.Fix
-import qualified Data.List.NonEmpty as NonEmpty
-
-import           Miller.Expr as Expr
-import           Miller.Stats (Stats)
-import qualified Miller.Stats as Stats
-import qualified Miller.TI.Env as Env
-import           Miller.TI.Heap (Heap, Addr)
-import qualified Miller.TI.Heap as Heap
+import Data.Functor.Identity
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Text.Prettyprint.Doc ((<+>))
+import Data.Text.Prettyprint.Doc qualified as Pretty
+import Doors hiding (find)
+import Miller.Expr as Expr
+import Miller.Stats (Stats)
+import Miller.Stats qualified as Stats
+import Miller.TI.Env qualified as Env
+import Miller.TI.Heap (Addr, Heap)
+import Miller.TI.Heap qualified as Heap
+import Prelude hiding (lookup)
 
 -- The dump records the state of the spine prior to the evaluation of
 -- an argument of a strict primitive. Currently unused.
@@ -35,18 +44,20 @@ prettyStack st = Pretty.align (Pretty.list (fmap pretty st))
 type Env = Env.Env Addr
 
 data TIMachine = TIMachine
-  { stack   :: Stack
-  , heap    :: Heap Node -- maps Addr to Node
-  } deriving (Eq, Show)
+  { stack :: Stack,
+    heap :: Heap Node -- maps Addr to Node
+  }
+  deriving (Eq, Show)
 
 push :: Addr -> TIMachine -> TIMachine
-push a m = m { stack = a : stack m }
+push a m = m {stack = a : stack m}
 
 instance Pretty.Pretty TIMachine where
-  pretty TIMachine{stack, heap} =
-    Pretty.vcat [ "stack" <+> "=" <+> prettyStack stack
-                , "heap " <+> "=" <+> pretty heap
-                ]
+  pretty TIMachine {stack, heap} =
+    Pretty.vcat
+      [ "stack" <+> "=" <+> prettyStack stack,
+        "heap " <+> "=" <+> pretty heap
+      ]
 
 instance Lower TIMachine where
   lowerBound = TIMachine [] lowerBound
@@ -55,24 +66,25 @@ data Status
   = Crashed
   | Stopped
   | Active
-    deriving (Eq, Show)
+  deriving (Eq, Show)
 
 stoppedMachine :: TIMachine
-stoppedMachine = lowerBound
-  { stack = [lowerBound]
-  , heap = Heap.update lowerBound (NNum 1) Heap.initial
-  }
+stoppedMachine =
+  lowerBound
+    { stack = [lowerBound],
+      heap = Heap.update lowerBound (NNum 1) Heap.initial
+    }
 
 isFinal :: TIMachine -> Bool
 isFinal m = machineStatus m /= Active
 
 machineStatus :: TIMachine -> Status
-machineStatus TIMachine{ stack, heap } =
+machineStatus TIMachine {stack, heap} =
   let decide x = if isDataNode x then Stopped else Active
-  in case stack of
-    []     -> Crashed
-    [sole] -> maybe Crashed decide (Heap.lookup sole heap)
-    _      -> Active
+   in case stack of
+        [] -> Crashed
+        [sole] -> maybe Crashed decide (Heap.lookup sole heap)
+        _ -> Active
 
 data Node
   = NAp Addr Addr
@@ -80,13 +92,13 @@ data Node
   | NNum Int
   | NInd Addr
   | NPrim BinOp
-    deriving (Eq, Show)
+  deriving (Eq, Show)
 
 instance Pretty.Pretty Node where pretty = Pretty.viaShow
 
 isDataNode :: Node -> Bool
 isDataNode (NNum _) = True
-isDataNode _        = False
+isDataNode _ = False
 
 data TIFailure
   = EmptyStack
@@ -96,30 +108,29 @@ data TIFailure
   | TooFewArguments Int Int
   | BadArgument Node
   | Unimplemented String
-    deriving (Eq, Show)
+  deriving (Eq, Show)
 
-type TI sig m = ( Member (State TIMachine) sig
-                , Member (Reader Env) sig
-                , Member (Writer Stats) sig
-                , Member (Error TIFailure) sig
-                , Effect sig
-                , Carrier sig m
-                , MonadFix m
-                )
+type TI sig m =
+  ( Has (State TIMachine) sig m,
+    Has (Reader Env) sig m,
+    Has (Writer Stats) sig m,
+    Has (Error TIFailure) sig m,
+    MonadFix m
+  )
 
-runTI :: ReaderC Env (ErrorC TIFailure (WriterC Stats (StateC TIMachine PureC))) a -> (Either TIFailure a, TIMachine, Stats)
+runTI :: ReaderC Env (ErrorC TIFailure (WriterC Stats (StateC TIMachine Identity))) a -> (Either TIFailure a, TIMachine, Stats)
 runTI = runTI' lowerBound
 
-runTI' :: TIMachine -> ReaderC Env (ErrorC TIFailure (WriterC Stats (StateC TIMachine PureC))) a -> (Either TIFailure a, TIMachine, Stats)
+runTI' :: TIMachine -> ReaderC Env (ErrorC TIFailure (WriterC Stats (StateC TIMachine Identity))) a -> (Either TIFailure a, TIMachine, Stats)
 runTI' start go =
   let flatten (a, (b, c)) = (c, a, b)
-  in flatten . run . runState start . runWriter . runError . runReader @Env mempty $ go
+   in flatten . run . runState start . runWriter . runError . runReader @Env mempty $ go
 
 -- Register an item in the heap
 store :: TI sig m => Node -> m Addr
 store n = do
   (new, item) <- gets (Heap.alloc n . heap)
-  modify (\m -> m { heap = new })
+  modify (\m -> m {heap = new})
   item <$ Stats.allocation
 
 -- Register a supercombinator in the heap.
@@ -138,18 +149,19 @@ eval = execWriter @[TIMachine] go
       case machineStatus curr of
         Crashed -> throwError EmptyStack
         Stopped -> pure ()
-        Active  -> step *> go
+        Active -> step *> go
 
 stackHead :: TI sig m => m Addr
 stackHead = gets (listToMaybe . stack) >>= maybeM (throwError EmptyStack)
 
 step :: TI sig m => m ()
-step = stackHead >>= find >>= \case
-  NNum n -> numStep n
-  NAp f x -> apStep f x
-  NSupercomb name args body -> scStep name args body
-  NInd addr -> indStep addr
-  NPrim op -> primStep op
+step =
+  stackHead >>= find >>= \case
+    NNum n -> numStep n
+    NAp f x -> apStep f x
+    NSupercomb name args body -> scStep name args body
+    NInd addr -> indStep addr
+    NPrim op -> primStep op
 
 indStep :: TI sig m => Addr -> m ()
 indStep a = modify (push a)
@@ -169,17 +181,19 @@ find :: TI sig m => Addr -> m Node
 find a = gets (Heap.lookup a . heap) >>= maybeM (throwError (DeadPointer a))
 
 argumentAddresses :: TI sig m => m [Addr]
-argumentAddresses = gets stack >>= \case
-  []          -> throwError EmptyStack
-  (_sc:items) -> traverse go items
-    where go addr = find addr >>= \case
+argumentAddresses =
+  gets stack >>= \case
+    [] -> throwError EmptyStack
+    (_sc : items) -> traverse go items
+      where
+        go addr =
+          find addr >>= \case
             NAp _fun arg -> pure arg
-            NInd arg     -> pure arg
-            n            -> throwError (BadArgument n)
+            NInd arg -> pure arg
+            n -> throwError (BadArgument n)
 
 primStep :: TI sig m => BinOp -> m ()
 primStep = throwError . Unimplemented . show
-
 
 -- UPDATES WILL BE PERFORMED HERE
 scStep :: TI sig m => Name -> [Name] -> CoreExpr -> m ()
@@ -191,20 +205,23 @@ scStep _name args body = do
 
   -- Bind argument names to addresses
   argBindings <- Env.fromBindings args <$> argumentAddresses
-  newEnviron  <- mappend argBindings <$> ask
-  h           <- gets heap
+  newEnviron <- mappend argBindings <$> ask
+  h <- gets heap
   let (newHeap, result) = run $ runReader newEnviron $ runState h $ instantiate body
-  modify (\m -> m { heap = newHeap })
-
+  modify (\m -> m {heap = newHeap})
 
   -- Discard arguments from stack (including root)
   st <- gets stack
   let (currArgs, rest) = splitAt (length args + 1) st
 
   -- Push result onto stack
-  modify (\m -> m { stack = result : rest
-                  , heap  = Heap.update (last currArgs) (NInd result) (heap m)
-                  })
+  modify
+    ( \m ->
+        m
+          { stack = result : rest,
+            heap = Heap.update (last currArgs) (NInd result) (heap m)
+          }
+    )
 
   Stats.reduction
 
@@ -223,39 +240,31 @@ execute p = do
 
 -- | This function diverges if it is called inside a strict monad,
 -- so we can't use it with Writer.
-instantiate :: ( Member (Reader Env) sig
-               , Member (State (Heap Node)) sig
-               , MonadFix m
-               , Carrier sig m
-               )
-            => CoreExpr -> m Addr
+instantiate ::
+  ( Has (Reader Env) sig m,
+    Has (State (Heap Node)) sig m,
+    MonadFix m
+  ) =>
+  CoreExpr ->
+  m Addr
 instantiate e = case e of
-  Expr.Num i  -> state (Heap.alloc (NNum i))
-  Expr.Var n  -> do
+  Expr.Num i -> state (Heap.alloc (NNum i))
+  Expr.Var n -> do
     item <- Env.lookup n <$> ask
     pure (fromMaybe (error (show n)) item)
   Expr.Ap f x -> do
     fore <- instantiate f
-    aft  <- instantiate x
+    aft <- instantiate x
     state (Heap.alloc (NAp fore aft))
-
   Let Non binds bod -> do
     -- Straightforward, nonrecursive lets
     newVals <- traverse (instantiate . snd) binds
     let newBindings = Env.fromList (NonEmpty.zip (fmap fst binds) newVals)
     local (newBindings <>) (instantiate bod)
-
   Let Rec binds bod -> mdo
     -- newVals is defined in terms of newBindings, and vice versa
     -- laziness is absolute witchcraft and I hate/love it
     newVals <- traverse (local (newBindings <>) . instantiate . snd) binds
     let newBindings = Env.fromList (NonEmpty.zip (fmap fst binds) newVals)
     local (newBindings <>) (instantiate bod)
-
-
   other -> error ("unimplemented: " <> show other)
-
-state :: (Member (State s) sig, Carrier sig m) => (s -> (s, a)) -> m a
-state go = do
-  (st, res) <- gets go
-  res <$ put st
