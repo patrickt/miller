@@ -42,6 +42,7 @@ library
                      , Miller.TI
                      , Miller.TI.Env
                      , Miller.TI.Heap
+                     , Miller.TI.Stack
                      -- , Miller.Typecheck
 
 executable runmiller

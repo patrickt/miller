@@ -30,37 +30,33 @@ import Miller.Stats qualified as Stats
 import Miller.TI.Env qualified as Env
 import Miller.TI.Heap (Addr, Heap)
 import Miller.TI.Heap qualified as Heap
+import Miller.TI.Stack qualified as Stack
 import Prelude hiding (lookup)
 
 -- The dump records the state of the spine prior to the evaluation of
 -- an argument of a strict primitive. Currently unused.
 data Dump = Dump deriving (Eq, Show)
 
-type Stack = [Addr]
-
-prettyStack :: [Addr] -> Pretty.Doc a
-prettyStack st = Pretty.align (Pretty.list (fmap pretty st))
-
 type Env = Env.Env Addr
 
 data TIMachine = TIMachine
-  { stack :: Stack,
+  { stack :: Stack.Stack,
     heap :: Heap Node -- maps Addr to Node
   }
   deriving (Eq, Show)
 
-push :: Addr -> TIMachine -> TIMachine
-push a m = m {stack = a : stack m}
-
 instance Pretty.Pretty TIMachine where
   pretty TIMachine {stack, heap} =
     Pretty.vcat
-      [ "stack" <+> "=" <+> prettyStack stack,
+      [ "stack" <+> "=" <+> pretty stack,
         "heap " <+> "=" <+> pretty heap
       ]
 
 instance Lower TIMachine where
-  lowerBound = TIMachine [] lowerBound
+  lowerBound = TIMachine mempty lowerBound
+
+onStack :: (Stack.Stack -> Stack.Stack) -> TIMachine -> TIMachine
+onStack f m = m { stack = f (stack m) }
 
 data Status
   = Crashed
@@ -71,7 +67,7 @@ data Status
 stoppedMachine :: TIMachine
 stoppedMachine =
   lowerBound
-    { stack = [lowerBound],
+    { stack = Stack.Stack [lowerBound],
       heap = Heap.update lowerBound (NNum 1) Heap.initial
     }
 
@@ -81,7 +77,7 @@ isFinal m = machineStatus m /= Active
 machineStatus :: TIMachine -> Status
 machineStatus TIMachine {stack, heap} =
   let decide x = if isDataNode x then Stopped else Active
-   in case stack of
+   in case Stack.contents stack of
         [] -> Crashed
         [sole] -> maybe Crashed decide (Heap.lookup sole heap)
         _ -> Active
@@ -152,7 +148,7 @@ eval = execWriter @[TIMachine] go
         Active -> step *> go
 
 stackHead :: TI sig m => m Addr
-stackHead = gets (listToMaybe . stack) >>= maybeM (throwError EmptyStack)
+stackHead = gets (Stack.first . stack) >>= maybeM (throwError EmptyStack)
 
 step :: TI sig m => m ()
 step =
@@ -164,7 +160,7 @@ step =
     NPrim op -> primStep op
 
 indStep :: TI sig m => Addr -> m ()
-indStep a = modify (push a)
+indStep a = modify (onStack (Stack.replace a))
 
 numStep :: TI sig m => Int -> m ()
 numStep _ = throwError NumberAppliedAsFunction
@@ -172,7 +168,7 @@ numStep _ = throwError NumberAppliedAsFunction
 -- As per the unwind rule, we look leftwards and downwards
 -- to get the current thing to apply, so we only look in 'f'.
 apStep :: TI sig m => Addr -> Addr -> m ()
-apStep f _x = modify (push f)
+apStep f _x = modify (onStack (Stack.push f))
 
 lookup :: TI sig m => Name -> m Addr
 lookup n = asks (Env.lookup n) >>= maybeM (throwError (UnboundName n))
@@ -181,8 +177,9 @@ find :: TI sig m => Addr -> m Node
 find a = gets (Heap.lookup a . heap) >>= maybeM (throwError (DeadPointer a))
 
 argumentAddresses :: TI sig m => m [Addr]
-argumentAddresses =
-  gets stack >>= \case
+argumentAddresses = do
+  Stack.Stack s <- gets stack
+  case s of
     [] -> throwError EmptyStack
     (_sc : items) -> traverse go items
       where
@@ -198,28 +195,29 @@ primStep = throwError . Unimplemented . show
 -- UPDATES WILL BE PERFORMED HERE
 scStep :: TI sig m => Name -> [Name] -> CoreExpr -> m ()
 scStep _name args body = do
-  given <- gets (pred . length . stack)
+  given <- gets (pred . Stack.length . stack)
   let needed = length args
   when (given < needed) (throwError (TooFewArguments given needed))
   Stats.depth given
 
+  root <- gets ((Stack.nth (length args)) . stack)
   -- Bind argument names to addresses
   argBindings <- Env.fromBindings args <$> argumentAddresses
   newEnviron <- mappend argBindings <$> ask
   h <- gets heap
-  let (newHeap, result) = run $ runReader newEnviron $ runState h $ instantiate body
+  let instantiated = run $ runError @TIFailure $ runReader newEnviron $ runState h $ instantiateWithUpdate body root
+  (newHeap, result) <- either throwError pure instantiated
   modify (\m -> m {heap = newHeap})
 
   -- Discard arguments from stack (including root)
-  st <- gets stack
+  Stack.Stack st <- gets stack
   let (currArgs, rest) = splitAt (length args + 1) st
 
   -- Push result onto stack
   modify
     ( \m ->
         m
-          { stack = result : rest,
-            heap = Heap.update (last currArgs) (NInd result) (heap m)
+          { stack = Stack.Stack (result : rest)
           }
     )
 
@@ -230,7 +228,7 @@ compile ps = do
   toplevels <- Env.fromList <$> traverse allocateSC (unProgram (preludeDefs <> ps))
   local (mappend toplevels) $ do
     main <- lookup "main"
-    modify (push main)
+    modify (onStack (Stack.push main))
     eval
 
 execute :: TI sig m => CoreProgram -> m Node
@@ -268,3 +266,30 @@ instantiate e = case e of
     let newBindings = Env.fromList (NonEmpty.zip (fmap fst binds) newVals)
     local (newBindings <>) (instantiate bod)
   other -> error ("unimplemented: " <> show other)
+
+instantiateWithUpdate ::
+  ( Has (Reader Env) sig m,
+    Has (State (Heap Node)) sig m,
+    Has (Error TIFailure) sig m,
+    MonadFix m
+  ) =>
+  CoreExpr ->
+  Addr ->
+  m Addr
+instantiateWithUpdate e dest = do
+  case e of
+    Expr.Num i -> modify (Heap.update dest (NNum i))
+    Expr.Ap a b -> do
+      fore <- instantiate a
+      aft <- instantiate b
+      modify (Heap.update dest (NAp fore aft))
+    Expr.Var n -> do
+      item <- Env.lookup n <$> ask @Env
+      case item of
+        Nothing -> throwError (UnboundName n)
+        Just addr -> modify (Heap.update dest (NInd addr))
+    Expr.Let {} -> do
+      addr <- instantiate e
+      modify (Heap.update dest (NInd addr))
+    other -> error ("unimplemented: " <> show other)
+  pure dest

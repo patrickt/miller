@@ -14,7 +14,7 @@ import Hedgehog.Internal.Gen qualified as Gen (ensure)
 import Hedgehog.Internal.Property (failWith)
 import Hedgehog.Range qualified as Range
 import Miller.Expr as Expr
-import Miller.Parser as Parser
+import Miller.Parser as Parser hiding (parse)
 import Miller.Pretty as Pretty
 import Miller.Stats qualified as Stats
 import Miller.TI qualified as TI
