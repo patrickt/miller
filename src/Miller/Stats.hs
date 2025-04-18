@@ -17,7 +17,7 @@ import Control.Carrier.Writer.Strict
 import Data.Monoid
 import Data.Monoid.Generic
 import Data.Semigroup
-import Data.Text.Prettyprint.Doc
+import Prettyprinter
 import GHC.Generics
 
 data Stats = Stats

@@ -5,6 +5,8 @@ module Miller.Parser
   ( parseExpr,
     parseProgram,
     keywords,
+    parse,
+    parseIO,
   )
 where
 
@@ -89,3 +91,9 @@ parseProgram = toplevel (runUnlined (Program <$> parseDefn `sepEndByNonEmpty` ne
 
 toplevel :: (Monad m, TokenParsing m) => m a -> m a
 toplevel f = f <* whiteSpace <* eof
+
+parse :: String -> Either String CoreProgram
+parse = foldResult (Left . show) Right . parseString parseProgram mempty
+
+parseIO :: FilePath -> IO (Either String CoreProgram)
+parseIO f = Text.Trifecta.foldResult (Left . show) Right <$> parseFromFileEx parseProgram f

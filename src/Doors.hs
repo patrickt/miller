@@ -12,7 +12,7 @@ import Data.Foldable as X
 import Data.Function as X
 import Data.Maybe as X
 import Data.Semilattice.Lower as X
-import Data.Text.Prettyprint.Doc as X (Pretty (..), viaShow)
+import Prettyprinter as X (Pretty (..), viaShow)
 import Data.Traversable as X
 import Debug.Trace as X
 

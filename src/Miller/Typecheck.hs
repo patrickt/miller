@@ -20,8 +20,8 @@ import qualified Data.HashMap.Strict as HashMap
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
 import Data.Hashable
-import Data.Text.Prettyprint.Doc (Doc, Pretty (..), (<+>))
-import qualified Data.Text.Prettyprint.Doc as Pretty
+import Prettyprinter (Doc, Pretty (..), (<+>))
+import qualified Prettyprinter as Pretty
 import Doors
 import GHC.Generics
 

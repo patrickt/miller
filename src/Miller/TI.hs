@@ -21,8 +21,8 @@ import Control.Carrier.Writer.Strict
 import Control.Monad.Fix
 import Data.Functor.Identity
 import Data.List.NonEmpty qualified as NonEmpty
-import Data.Text.Prettyprint.Doc ((<+>))
-import Data.Text.Prettyprint.Doc qualified as Pretty
+import Prettyprinter ((<+>))
+import Prettyprinter qualified as Pretty
 import Doors hiding (find)
 import Miller.Expr as Expr
 import Miller.Stats (Stats)

@@ -17,7 +17,7 @@ where
 
 import Data.HashMap.Lazy (HashMap)
 import qualified Data.HashMap.Lazy as HM
-import qualified Data.Text.Prettyprint.Doc as Pretty
+import qualified Prettyprinter as Pretty
 import Doors
 import Miller.Expr
 import Prelude hiding (lookup)

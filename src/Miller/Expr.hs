@@ -37,7 +37,7 @@ import Data.Hashable
 import Data.List.NonEmpty (NonEmpty)
 import Data.String
 import Data.Text (Text)
-import Data.Text.Prettyprint.Doc
+import Prettyprinter
 import GHC.Exts (IsList (..))
 
 newtype Name = Name Text

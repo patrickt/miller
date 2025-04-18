@@ -10,8 +10,8 @@ module Miller.Pretty
 where
 
 import Data.List.NonEmpty (NonEmpty)
-import Data.Text.Prettyprint.Doc
-import qualified Data.Text.Prettyprint.Doc.Render.String as Pretty
+import Prettyprinter
+import qualified Prettyprinter.Render.String as Pretty
 import Doors
 import Miller.Expr
 
@@ -31,6 +31,7 @@ prettyProgram :: CoreProgram -> Doc a
 prettyProgram (Program ps) = vsep . toList $ fmap prettyDefn ps
 
 prettyDefn :: CoreDefn -> Doc a
+prettyDefn (Defn n [] b) = pretty n <+> "=" <+> prettyExpr b
 prettyDefn (Defn n params b) = pretty n <+> hsep (pretty <$> params) <+> "=" <+> prettyExpr b
 
 -- Snatched from the Semantic definition. Correctly pretty-printing with precedence

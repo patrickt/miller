@@ -1,2 +1,4 @@
 basic = 1
 foo = 2
+dang = foo - basic
+dingdang fool = fool + foo

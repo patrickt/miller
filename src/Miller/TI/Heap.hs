@@ -19,7 +19,7 @@ import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IM
 import Data.Stream.Infinite (Stream (..))
 import qualified Data.Stream.Infinite as Stream
-import qualified Data.Text.Prettyprint.Doc as Pretty
+import qualified Prettyprinter as Pretty
 import Doors
 import Prelude hiding (lookup)
 
