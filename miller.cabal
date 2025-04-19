@@ -19,8 +19,10 @@ common shared
   build-depends:    base >= 4.7 && < 5
                   , containers
                   , fused-effects
+                  , fused-effects-optics
                   , generic-monoid
                   , hashable
+                  , optics
                   , parsers
                   , prettyprinter
                   , recursion-schemes

@@ -13,6 +13,7 @@ import Hedgehog.Gen qualified as Gen
 import Hedgehog.Internal.Gen qualified as Gen (ensure)
 import Hedgehog.Internal.Property (failWith)
 import Hedgehog.Range qualified as Range
+import Optics.Getter
 import Miller.Expr as Expr
 import Miller.Parser as Parser hiding (parse)
 import Miller.Pretty as Pretty
@@ -118,10 +119,10 @@ prop_ti_allocateSC_registers_heap_entry = property $ do
         for names $ \name -> TI.allocateSC (Defn name [] (Num 1))
 
   res <- evalEither eRes
-  Heap.count (TI.heap mach) === count
+  Heap.count (view TI.heap mach) === count
 
   for_ res $ \(name, addr) -> do
-    Heap.lookup addr (TI.heap mach) === Just (TI.NSupercomb name [] (Num 1))
+    Heap.lookup addr (view TI.heap mach) === Just (TI.NSupercomb name [] (Num 1))
 
 prop_eval_finalized_machine_is_noop :: Property
 prop_eval_finalized_machine_is_noop = testCase $ do
