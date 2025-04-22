@@ -41,7 +41,7 @@ import Data.List.NonEmpty qualified
 import Data.String
 import Data.Text (Text)
 import Prettyprinter qualified as Pretty
-import Prettyprinter ((<+>))
+import Prettyprinter ((<+>), pretty)
 import GHC.Exts (IsList (..))
 
 newtype Name = Name Text
@@ -114,9 +114,9 @@ data Defn a = Defn Name [a] (Expr a) deriving (Eq, Show, Functor)
 instance (Show a, Pretty.Pretty a) => Pretty.Pretty (Defn a) where
   pretty (Defn name args exp)
     = "Defn"
-      <+> Pretty.pretty name <> Pretty.tupled (fmap Pretty.pretty args)
+      <+> pretty name <> Pretty.tupled (fmap pretty args)
       <+> "="
-      <+> Pretty.pretty exp
+      <+> pretty exp
 
 isCAF :: Defn a -> Bool
 isCAF (Defn _ xs _) = null xs
@@ -128,7 +128,7 @@ newtype Program a = Program {unProgram :: NonEmpty (Defn a)}
   deriving stock (Functor)
 
 instance (Show a, Pretty.Pretty a) => Pretty.Pretty (Program a) where
-  pretty = Pretty.list . fmap Pretty.pretty . toList . unProgram
+  pretty = Pretty.list . fmap pretty . toList . unProgram
 
 instance IsList (Program a) where
   type Item (Program a) = Defn a

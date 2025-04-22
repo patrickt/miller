@@ -30,3 +30,6 @@ first (Stack s) = listToMaybe s
 
 pop :: Int -> Stack a -> Stack a
 pop n (Stack s) = Stack (drop n s)
+
+isEmpty :: Stack a -> Bool
+isEmpty = null . contents
