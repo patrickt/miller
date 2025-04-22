@@ -36,7 +36,7 @@ data Node
   | NSupercomb Name [Name] CoreExpr
   | NNum Int
   | NInd Addr
-  | NPrim BinOp
+  | NPrim (Either UnOp BinOp)
   deriving (Eq, Show)
 
 data TIMachine = TIMachine
@@ -168,27 +168,10 @@ numStep _ = throwError NumberAppliedAsFunction
 apStep :: TI sig m => Addr -> Addr -> m ()
 apStep f _x = modifying stack (Stack.push f)
 
-lookup :: TI sig m => Name -> m Addr
-lookup n = asks (Env.lookup n) >>= maybeM (throwError (UnboundName n))
+primStep :: TI sig m => Either UnOp BinOp -> m ()
+primStep (Left x) = throwError (Unimplemented (show x))
+primStep (Right op) = throwError (Unimplemented (show op))
 
-find :: TI sig m => Addr -> m Node
-find a = uses heap (Heap.lookup a) >>= maybeM (throwError (DeadPointer a))
-
-argumentAddresses :: TI sig m => m [Addr]
-argumentAddresses = do
-  Stack.Stack s <- use stack
-  case s of
-    [] -> throwError EmptyStack
-    (_sc : items) -> traverse go items
-      where
-        go addr =
-          find addr >>= \case
-            NAp _fun arg -> pure arg
-            NInd arg -> pure arg
-            n -> throwError (BadArgument n)
-
-primStep :: TI sig m => BinOp -> m ()
-primStep = throwError . Unimplemented . show
 
 -- UPDATES WILL BE PERFORMED HERE
 scStep :: TI sig m => Name -> [Name] -> CoreExpr -> m ()
@@ -214,13 +197,45 @@ scStep _name args body = do
   assign stack (Stack.Stack (result : rest))
   Stats.reduction
 
+lookup :: TI sig m => Name -> m Addr
+lookup n = asks (Env.lookup n) >>= maybeM (throwError (UnboundName n))
+
+find :: TI sig m => Addr -> m Node
+find a = uses heap (Heap.lookup a) >>= maybeM (throwError (DeadPointer a))
+
+argumentAddresses :: TI sig m => m [Addr]
+argumentAddresses = do
+  Stack.Stack s <- use stack
+  case s of
+    [] -> throwError EmptyStack
+    (_sc : items) -> traverse go items
+      where
+        go addr =
+          find addr >>= \case
+            NAp _fun arg -> pure arg
+            NInd arg -> pure arg
+            n -> throwError (BadArgument n)
+
 compile :: TI sig m => CoreProgram -> m [TIMachine]
 compile ps = do
   toplevels <- Env.fromList <$> traverse allocateSC (unProgram (preludeDefs <> ps))
-  local (mappend toplevels) $ do
+  builtins <- Env.fromList <$> traverse (uncurry allocatePrim) operators
+  local (mappend toplevels . mappend builtins) $ do
     main <- lookup "main"
     modifying stack (Stack.push main)
     eval
+
+operators :: [(Name, Either Expr.UnOp Expr.BinOp)]
+operators = [("*", Right Expr.Mul),
+             ("+", Right Expr.Add),
+             ("-", Right Expr.Sub),
+             ("~", Left Expr.Neg)
+             ]
+
+allocatePrim :: TI sig m => Name -> Either UnOp BinOp -> m (Name, Addr)
+allocatePrim name op = do
+  addr <- store (NPrim op)
+  pure (name, addr)
 
 execute :: TI sig m => CoreProgram -> m Node
 execute p = do
@@ -256,6 +271,10 @@ instantiate e = case e of
     newVals <- traverse (local (newBindings <>) . instantiate . snd) binds
     let newBindings = Env.fromList (NonEmpty.zip (fmap fst binds) newVals)
     local (newBindings <>) (instantiate bod)
+  Binary op left right ->
+    instantiate (Expr.Ap (Expr.Ap (Expr.Var (binOpToName op)) left) right)
+  Unary op arg ->
+    instantiate (Expr.Ap (Expr.Var (unOpToName op)) arg)
   other -> error ("unimplemented: " <> show other)
 
 instantiateWithUpdate ::
@@ -281,5 +300,12 @@ instantiateWithUpdate e dest = do
     Expr.Let {} -> do
       addr <- instantiate e
       modify (Heap.update dest (NInd addr))
+    Binary op left right -> do
+      addr <- instantiate (Expr.Ap (Expr.Ap (Expr.Var (binOpToName op)) left) right)
+      modify (Heap.update dest (NInd addr))
+    Unary op arg -> do
+      addr <- instantiate (Expr.Ap (Expr.Var (unOpToName op)) arg)
+      modify (Heap.update dest (NInd addr))
     other -> error ("unimplemented: " <> show other)
+
   pure dest
