@@ -170,8 +170,19 @@ apStep f _x = modifying stack (Stack.push f)
 
 primStep :: TI sig m => Either UnOp BinOp -> m ()
 primStep (Left x) = throwError (Unimplemented (show x))
-primStep (Right op) = throwError (Unimplemented (show op))
-
+primStep (Right op) = do
+  entries <- uses stack (take 3 . Stack.contents)
+  given <- traverse find entries
+  case given of
+    [_, NAp _op left, NAp _prior right] -> do
+      x <- find left
+      y <- find right
+      case (x, y) of
+        (NNum x', NNum y') -> do
+          added <- store (NNum (x' + y'))
+          modifying stack (Stack.push added . Stack.pop 3)
+        other -> error ("unevaluated: " <> show other)
+    _ -> error ("badarg: " <> show given)
 
 -- UPDATES WILL BE PERFORMED HERE
 scStep :: TI sig m => Name -> [Name] -> CoreExpr -> m ()
