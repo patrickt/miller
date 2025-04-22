@@ -48,7 +48,6 @@ data TIMachine = TIMachine
   deriving stock (Eq, Show, Generic)
   deriving (Monoid, Semigroup) via Generically TIMachine
 
-
 makeLenses ''TIMachine
 
 instance Pretty.Pretty TIMachine where

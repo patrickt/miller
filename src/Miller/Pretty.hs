@@ -28,7 +28,7 @@ showProgram :: CoreProgram -> String
 showProgram = renderDoc . prettyProgram
 
 prettyProgram :: CoreProgram -> Doc a
-prettyProgram (Program ps) = vsep . toList $ fmap prettyDefn ps
+prettyProgram (Program ps) = Prettyprinter.list . toList $ fmap prettyDefn ps
 
 prettyDefn :: CoreDefn -> Doc a
 prettyDefn (Defn n [] b) = pretty n <+> "=" <+> prettyExpr b

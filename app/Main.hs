@@ -5,7 +5,7 @@ module Main where
 
 import Options.Generic
 import Miller.Parser (parseIO)
-import Miller.Pretty (showProgram, renderShow)
+import Miller.Pretty (showProgram, renderShow, renderShow)
 import Miller.TI qualified as TI
 
 data Cli
@@ -31,7 +31,7 @@ run (Ast file) = do
   eAST <- parseIO file
   case eAST of
     Left err -> fail err
-    Right p -> print p
+    Right p -> putStrLn (renderShow p)
 run (Parse file) = do
   eAST <- parseIO file
   case eAST of

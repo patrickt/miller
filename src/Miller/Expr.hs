@@ -37,17 +37,19 @@ where
 
 import Data.Hashable
 import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty qualified
 import Data.String
 import Data.Text (Text)
-import Prettyprinter
+import Prettyprinter qualified as Pretty
+import Prettyprinter ((<+>))
 import GHC.Exts (IsList (..))
 
 newtype Name = Name Text
-  deriving newtype (Eq, IsString, Pretty, Show, Ord, Hashable)
+  deriving newtype (Eq, IsString, Pretty.Pretty, Show, Ord, Hashable)
 
 data Rec = Non | Rec deriving (Eq, Show)
 
-instance Pretty Rec where
+instance Pretty.Pretty Rec where
   pretty Rec = "letrec"
   pretty Non = "let"
 
@@ -80,6 +82,8 @@ data Expr a
   | Unary UnOp (Expr a)
   deriving (Eq, Show, Functor)
 
+instance Show a => Pretty.Pretty (Expr a) where pretty = Pretty.viaShow
+
 infixl 8 $$
 
 infixl 7 $*
@@ -107,6 +111,13 @@ type CoreExpr = Expr Name
 
 data Defn a = Defn Name [a] (Expr a) deriving (Eq, Show, Functor)
 
+instance (Show a, Pretty.Pretty a) => Pretty.Pretty (Defn a) where
+  pretty (Defn name args exp)
+    = "Defn"
+      <+> Pretty.pretty name <> Pretty.tupled (fmap Pretty.pretty args)
+      <+> "="
+      <+> Pretty.pretty exp
+
 isCAF :: Defn a -> Bool
 isCAF (Defn _ xs _) = null xs
 
@@ -115,6 +126,9 @@ type CoreDefn = Defn Name
 newtype Program a = Program {unProgram :: NonEmpty (Defn a)}
   deriving newtype (Eq, Show, Semigroup)
   deriving stock (Functor)
+
+instance (Show a, Pretty.Pretty a) => Pretty.Pretty (Program a) where
+  pretty = Pretty.list . fmap Pretty.pretty . toList . unProgram
 
 instance IsList (Program a) where
   type Item (Program a) = Defn a
