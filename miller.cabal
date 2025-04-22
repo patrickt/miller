@@ -14,7 +14,7 @@ build-type:          Simple
 extra-source-files:  README.md
 
 common shared
-  default-language: Haskell2010
+  default-language: GHC2024
   default-extensions: FlexibleContexts, GHC2024
   build-depends:    base >= 4.7 && < 5
                   , containers

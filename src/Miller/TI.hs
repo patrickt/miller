@@ -1,6 +1,6 @@
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RecursiveDo #-}
 
@@ -14,6 +14,7 @@ import Control.Effect.Optics
 import Control.Monad.Fix
 import Data.Functor.Identity
 import Data.List.NonEmpty qualified as NonEmpty
+import GHC.Generics (Generic, Generically (..))
 import Prettyprinter ((<+>))
 import Prettyprinter qualified as Pretty
 import Optics hiding (assign, modifying, use)
@@ -40,10 +41,13 @@ data Node
   deriving (Eq, Show)
 
 data TIMachine = TIMachine
-  { _stack :: Stack,
-    _heap :: Heap Node -- maps Addr to Node
+  { _stack :: Stack Addr,
+    _heap :: Heap Node,
+    _dump :: Stack (Stack Addr)
   }
-  deriving (Eq, Show)
+  deriving stock (Eq, Show, Generic)
+  deriving (Monoid, Semigroup) via Generically TIMachine
+
 
 makeLenses ''TIMachine
 
@@ -51,17 +55,12 @@ instance Pretty.Pretty TIMachine where
   pretty m =
     Pretty.vcat
       [ "stack" <+> "=" <+> m ^. stack % to pretty,
-        "heap " <+> "=" <+> m ^. heap % to pretty
+        "heap " <+> "=" <+> m ^. heap % to pretty,
+        "dump"  <+> "=" <+> m ^. dump % to pretty
       ]
 
--- The dump records the state of the spine prior to the evaluation of
--- an argument of a strict primitive. Currently unused.
-data Dump = Dump deriving (Eq, Show)
 
 type Env = Env.Env Addr
-
-instance Lower TIMachine where
-  lowerBound = TIMachine mempty lowerBound
 
 -- Machines can be crashed, stopped, or active.
 data Status
@@ -69,13 +68,6 @@ data Status
   | Stopped
   | Active
   deriving (Eq, Show)
-
-stoppedMachine :: TIMachine
-stoppedMachine =
-  TIMachine
-    { _stack = Stack.Stack [lowerBound],
-      _heap = Heap.update lowerBound (NNum 1) Heap.initial
-    }
 
 isFinal :: TIMachine -> Bool
 isFinal m = machineStatus m /= Active
@@ -112,13 +104,21 @@ type TI sig m =
     MonadFix m
   )
 
-runTI :: ReaderC Env (ErrorC TIFailure (WriterC Stats (StateC TIMachine Identity))) a -> (Either TIFailure a, TIMachine, Stats)
-runTI = runTI' lowerBound
+type TIMonad = ReaderC Env (ErrorC TIFailure (WriterC Stats (StateC TIMachine Identity)))
 
-runTI' :: TIMachine -> ReaderC Env (ErrorC TIFailure (WriterC Stats (StateC TIMachine Identity))) a -> (Either TIFailure a, TIMachine, Stats)
+runTI :: TIMonad a -> (Either TIFailure a, TIMachine, Stats)
+runTI = runTI' mempty
+
+runTI' :: TIMachine -> TIMonad a -> (Either TIFailure a, TIMachine, Stats)
 runTI' start go =
   let flatten (a, (b, c)) = (c, a, b)
-   in flatten . run . runState start . runWriter . runError . runReader @Env mempty $ go
+   in flatten
+      . run
+      . runState @TIMachine start
+      . runWriter
+      . runError
+      . runReader @Env mempty
+      $ go
 
 -- Register an item in the heap
 store :: TI sig m => Node -> m Addr
@@ -171,18 +171,32 @@ apStep f _x = modifying stack (Stack.push f)
 primStep :: TI sig m => Either UnOp BinOp -> m ()
 primStep (Left x) = throwError (Unimplemented (show x))
 primStep (Right op) = do
-  entries <- uses stack (take 3 . Stack.contents)
-  given <- traverse find entries
-  case given of
-    [_, NAp _op left, NAp _prior right] -> do
-      x <- find left
-      y <- find right
-      case (x, y) of
-        (NNum x', NNum y') -> do
-          added <- store (NNum (x' + y'))
-          modifying stack (Stack.push added . Stack.pop 3)
-        other -> error ("unevaluated: " <> show other)
-    _ -> error ("badarg: " <> show given)
+  throwError (Unimplemented "fuck")
+  -- entries <- uses stack (take 3 . Stack.contents)
+  -- given <- traverse find entries
+  -- let recur item = find item >>= \case
+  --       NNum x' -> pure x'
+  --       NInd x' -> recur x'
+  --       NAp left right -> do
+  --         currStack <- uses stack
+  --         modifying dump (Stack.push currStack)
+  --         assign stack (pure (NAp left right))
+  --         pure Nothing
+  -- case given of
+  --   [_, NAp _op left, NAp _prior right] -> do
+  --     x <- recur left
+  --     case x of
+  --       Nothing -> pure ()
+  --       Just ok -> do
+  --         y <- recur right
+  --         case y of
+  --           Nothing -> pure ()
+  --           Just ok2 ->  do
+  --             let node = NNum (ok + ok2)
+  --             added <- store node
+  --             modifying stack (Stack.push added . Stack.pop 3)
+  --             modifying heap (Heap.update (head entries) node)
+  --   _ -> error ("badarg: " <> show given)
 
 -- UPDATES WILL BE PERFORMED HERE
 scStep :: TI sig m => Name -> [Name] -> CoreExpr -> m ()

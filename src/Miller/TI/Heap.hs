@@ -15,6 +15,7 @@ module Miller.TI.Heap
   )
 where
 
+import Data.Function (on)
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IM
 import Data.Stream.Infinite (Stream (..))
@@ -34,7 +35,7 @@ instance Pretty Addr where pretty = viaShow
 
 data Heap a = Heap
   { count :: Int,
-    _fresh :: Stream Int,
+    fresh :: Stream Int,
     entries :: IntMap a
   }
 
@@ -48,7 +49,14 @@ instance Pretty a => Pretty (Heap a) where
     let elements = fmap pair (IM.toList e)
     Pretty.align (Pretty.list elements)
 
-instance Lower (Heap a) where lowerBound = initial
+instance Semigroup (Heap a) where
+  a <> b = Heap
+    { count = (max `on` count) a b
+    , fresh = fresh (if Stream.head (fresh a) > Stream.head (fresh b) then a else b)
+    , entries = (mappend `on` entries) a b
+    }
+
+instance Monoid (Heap a) where mempty = initial
 
 initial :: Heap a
 initial = Heap 0 (Stream.iterate succ 1) mempty
