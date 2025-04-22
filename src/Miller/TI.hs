@@ -93,7 +93,19 @@ allocatePrim name op = do
   addr <- store (NPrim op)
   pure (name, addr)
 
--- Evaluate the loaded program, returning the set of all seen states.
+-- For each item on the N most recent stack entries, extract their argument
+-- (if an Ap node) or their indirect target (if an Ind node) or throw 'BadArgument'.
+stackContents :: TI sig m => Int -> m [Addr]
+stackContents needed = do
+  s <- uses stack (Stack.contents . Stack.take needed)
+  when (null s) Error.emptyStack
+  forM (drop 1 s) $
+    find >=> \case
+      NAp _fun arg -> pure arg
+      NInd arg -> pure arg
+      n -> Error.badArgument n
+
+-- Run a machine until it crashes or stops, returning the set of all seen states.
 eval :: TI sig m => m (Seq TIMachine)
 eval = execWriter @(Seq TIMachine) go
   where
@@ -105,6 +117,7 @@ eval = execWriter @(Seq TIMachine) go
         Stopped -> pure ()
         Active -> step *> go
 
+-- Run one step of template instantiation.
 step :: TI sig m => m ()
 step =
   stackHead >>= \case
@@ -114,17 +127,21 @@ step =
     NInd addr -> indStep addr
     NPrim op -> primStep op
 
+-- Indirect step: replace the top value with the value pointed to.
 indStep :: TI sig m => Addr -> m ()
 indStep a = modifying stack (Stack.replace a)
 
+-- Num step: crash.
 numStep :: TI sig m => Int -> m ()
 numStep _ = Error.numberAppliedAsFunction
 
+-- Ap step: push the function onto the stack.
 -- As per the unwind rule, we look leftwards and downwards
 -- to get the current thing to apply, so we only look in 'f'.
 apStep :: TI sig m => Addr -> Addr -> m ()
 apStep f _x = modifying stack (Stack.push f)
 
+-- Primitive step (unimplemented)
 primStep :: TI sig m => Either UnOp BinOp -> m ()
 primStep (Left x) = Error.unimplemented x
 primStep (Right op) = Error.unimplemented op
@@ -154,11 +171,11 @@ primStep (Right op) = Error.unimplemented op
   --             modifying heap (Heap.update (head entries) node)
   --   _ -> error ("badarg: " <> show given)
 
--- UPDATES WILL BE PERFORMED HERE
+-- Supercombinator step: apply a function, given args and body
 scStep :: TI sig m => Name -> [Name] -> CoreExpr -> m ()
 scStep _name args body = do
   -- record depth (number of dumps)
-  uses dump Stack.length >>= Stats.depth
+  Stats.depth =<< uses dump Stack.length
 
   -- Check arity and extract the root
   given <- uses stack (pred . Stack.length)
@@ -169,39 +186,13 @@ scStep _name args body = do
 
   -- Bind argument names to addresses
   argBindings <- Env.fromBindings args <$> stackContents (succ needed)
-  result <- local (mappend argBindings) (instantiateWithUpdate body root)
+  local (mappend argBindings) (instantiateWithUpdate body root)
 
   -- Discard arguments from stack (including root)
-  modifying stack (Stack.push result . Stack.pop (succ needed))
+  modifying stack (Stack.push root . Stack.pop (succ needed))
   Stats.reduction
 
--- For each item on the N most recent stack entries, extract their argument
--- (if an Ap node) or their indirect target (if an Ind node) or throw 'BadArgument'.
-stackContents :: TI sig m => Int -> m [Addr]
-stackContents needed = do
-  s <- uses stack (Stack.contents . Stack.take needed)
-  when (null s) Error.emptyStack
-  forM (drop 1 s) $
-    find >=> \case
-      NAp _fun arg -> pure arg
-      NInd arg -> pure arg
-      n -> Error.badArgument n
-
-
-compile :: TI sig m => CoreProgram -> m (Seq TIMachine)
-compile ps = do
-  toplevels <- Env.fromList <$> traverse allocateSC (unProgram (preludeDefs <> ps))
-  builtins <- Env.fromList <$> traverse (uncurry allocatePrim) operators
-  local (mappend toplevels . mappend builtins) $ do
-    main <- lookup "main"
-    modifying stack (Stack.push main)
-    eval
-
-execute :: TI sig m => CoreProgram -> m Node
-execute p = compile p *> stackHead
-
--- | This function diverges if it is called inside a strict monad,
--- so we can't use it with Writer.
+-- Given a redex, instantiate it and return its address on the stack.
 instantiate ::
   TI sig m =>
   CoreExpr ->
@@ -212,9 +203,9 @@ instantiate e = case e of
     item <- Env.lookup n <$> ask
     pure (fromMaybe (error ("unbound name: " <> show n)) item)
   Expr.Ap f x -> do
-    fore <- instantiate f
-    aft <- instantiate x
-    withinState heap (Heap.alloc (NAp fore aft))
+    fun <- instantiate f
+    arg <- instantiate x
+    store (NAp fun arg)
   Let Non binds bod -> do
     -- Straightforward, nonrecursive lets
     newVals <- traverse (instantiate . snd) binds
@@ -223,7 +214,7 @@ instantiate e = case e of
   Let Rec binds bod -> mdo
     -- newVals is defined in terms of newBindings, and vice versa
     -- laziness is absolute witchcraft and I hate/love it
-    newVals <- traverse (local (newBindings <>) . instantiate . snd) binds
+    newVals <- traverse (local (mappend newBindings) . instantiate . snd) binds
     let newBindings = Env.fromList (NonEmpty.zip (fmap fst binds) newVals)
     local (newBindings <>) (instantiate bod)
   Binary op left right ->
@@ -232,11 +223,12 @@ instantiate e = case e of
     instantiate (Expr.Ap (Expr.Var (unOpToName op)) arg)
   other -> error ("unimplemented: " <> show other)
 
+-- Given a redex and its address in memory, update it with its instantiation.
 instantiateWithUpdate ::
   TI sig m =>
   CoreExpr ->
   Addr ->
-  m Addr
+  m ()
 instantiateWithUpdate e dest = do
   case e of
     Expr.Num i -> modifying heap (Heap.update dest (NNum i))
@@ -260,4 +252,16 @@ instantiateWithUpdate e dest = do
       modifying heap (Heap.update dest (NInd addr))
     other -> error ("unimplemented: " <> show other)
 
-  pure dest
+-- Compile and run a program, returning the set of all seen states.
+compile :: TI sig m => CoreProgram -> m (Seq TIMachine)
+compile ps = do
+  toplevels <- Env.fromList <$> traverse allocateSC (unProgram (preludeDefs <> ps))
+  builtins <- Env.fromList <$> traverse (uncurry allocatePrim) operators
+  local (mappend toplevels . mappend builtins) $ do
+    main <- lookup "main"
+    modifying stack (Stack.push main)
+    eval
+
+-- Compile and run a program, returning the top of the stack.
+execute :: TI sig m => CoreProgram -> m Node
+execute p = compile p *> stackHead
