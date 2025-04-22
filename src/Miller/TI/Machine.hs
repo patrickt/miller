@@ -39,8 +39,6 @@ instance Pretty.Pretty TIMachine where
       ]
 
 
-type Env = Env.Env Addr
-
 -- Machines can be crashed, stopped, or active.
 data Status
   = Crashed
@@ -67,3 +65,11 @@ machineStatus m =
         [sole] | Stack.isEmpty (m ^. dump)
                  -> maybe Crashed decide (m ^. heap % to (Heap.lookup sole))
         _ -> Active
+
+-- All operators supported in the TI machine.
+operators :: [(Name, Either Expr.UnOp Expr.BinOp)]
+operators = [("*", Right Expr.Mul),
+             ("+", Right Expr.Add),
+             ("-", Right Expr.Sub),
+             ("~", Left Expr.Neg)
+             ]

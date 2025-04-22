@@ -1,7 +1,7 @@
 module Miller.TI.Stack where
 
 import Prelude qualified
-import Prelude hiding (length)
+import Prelude hiding (length, take)
 import Prettyprinter qualified as Pretty
 import Miller.TI.Heap (Addr)
 import Doors
@@ -30,6 +30,9 @@ first (Stack s) = listToMaybe s
 
 pop :: Int -> Stack a -> Stack a
 pop n (Stack s) = Stack (drop n s)
+
+take :: Int -> Stack a -> Stack a
+take n (Stack s) = Stack (Prelude.take n s)
 
 isEmpty :: Stack a -> Bool
 isEmpty = null . contents

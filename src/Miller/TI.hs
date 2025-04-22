@@ -20,8 +20,9 @@ import Doors hiding (find)
 import Miller.Expr as Expr
 import Miller.Stats (Stats)
 import Miller.Stats qualified as Stats
+import Miller.TI.Env (Env)
 import Miller.TI.Env qualified as Env
-import Miller.TI.Heap (Addr, Heap)
+import Miller.TI.Heap (Addr)
 import Miller.TI.Heap qualified as Heap
 import Miller.TI.Stack qualified as Stack
 import Miller.TI.Error qualified as Error
@@ -33,7 +34,7 @@ import Prelude hiding (lookup)
 
 type TI sig m =
   ( Has (State TIMachine) sig m,
-    Has (Reader Env) sig m,
+    Has (Reader (Env Addr)) sig m,
     Has (Writer Stats) sig m,
     Has (Error Error.TIFailure) sig m,
     MonadFix m
@@ -41,7 +42,12 @@ type TI sig m =
 
 -- Keeps track of an immutable environment, a lazy machine state,
 -- stats, and failure (this last is hinky due to laziness).
-type TIMonad = ReaderC Env (ErrorC TIFailure (WriterC Stats (StateC TIMachine Identity)))
+type TIMonad = ReaderC (Env Addr)
+               (ErrorC TIFailure
+                (WriterC Stats
+                 (StateC TIMachine Identity)
+                )
+               )
 
 -- Run a template instantiation invocation with an empty starting state.
 runTI :: TIMonad a -> (Either TIFailure a, TIMachine, Stats)
@@ -53,10 +59,10 @@ runTI' start go =
   let flatten (a, (b, c)) = (c, a, b)
    in flatten
       . run
-      . runState @TIMachine start
+      . runState start
       . runWriter
       . runError
-      . runReader @Env mempty
+      . runReader (mempty :: Env Addr)
       $ go
 
 -- Register a node on the heap, returning its new address.
@@ -86,14 +92,6 @@ allocatePrim :: TI sig m => Name -> Either UnOp BinOp -> m (Name, Addr)
 allocatePrim name op = do
   addr <- store (NPrim op)
   pure (name, addr)
-
--- All operators supported in the VM.
-operators :: [(Name, Either Expr.UnOp Expr.BinOp)]
-operators = [("*", Right Expr.Mul),
-             ("+", Right Expr.Add),
-             ("-", Right Expr.Sub),
-             ("~", Left Expr.Neg)
-             ]
 
 -- Evaluate the loaded program, returning the set of all seen states.
 eval :: TI sig m => m (Seq TIMachine)
@@ -159,36 +157,36 @@ primStep (Right op) = Error.unimplemented op
 -- UPDATES WILL BE PERFORMED HERE
 scStep :: TI sig m => Name -> [Name] -> CoreExpr -> m ()
 scStep _name args body = do
+  -- record depth (number of dumps)
+  uses dump Stack.length >>= Stats.depth
+
+  -- Check arity and extract the root
   given <- uses stack (pred . Stack.length)
   let needed = length args
-  when (given < needed) (Error.tooFewArguments given needed)
-  Stats.depth given
+  root <- if (given < needed)
+    then Error.tooFewArguments given needed
+    else uses stack (Stack.nth needed)
 
-  root <- uses stack (Stack.nth (length args))
   -- Bind argument names to addresses
-  argBindings <- Env.fromBindings args <$> argumentAddresses
-  newEnviron <- mappend argBindings <$> ask
+  argBindings <- Env.fromBindings args <$> stackContents (succ needed)
+  result <- local (mappend argBindings) (instantiateWithUpdate body root)
 
-  result <- instantiateWithUpdate body root
   -- Discard arguments from stack (including root)
-  Stack.Stack st <- use stack
-  let (currArgs, rest) = splitAt (length args + 1) st
-  assign stack (Stack.Stack (result : rest))
+  modifying stack (Stack.push result . Stack.pop (succ needed))
   Stats.reduction
 
+-- For each item on the N most recent stack entries, extract their argument
+-- (if an Ap node) or their indirect target (if an Ind node) or throw 'BadArgument'.
+stackContents :: TI sig m => Int -> m [Addr]
+stackContents needed = do
+  s <- uses stack (Stack.contents . Stack.take needed)
+  when (null s) Error.emptyStack
+  forM (drop 1 s) $
+    find >=> \case
+      NAp _fun arg -> pure arg
+      NInd arg -> pure arg
+      n -> Error.badArgument n
 
-argumentAddresses :: TI sig m => m [Addr]
-argumentAddresses = do
-  Stack.Stack s <- use stack
-  case s of
-    [] -> Error.emptyStack
-    (_sc : items) -> traverse go items
-      where
-        go addr =
-          find addr >>= \case
-            NAp _fun arg -> pure arg
-            NInd arg -> pure arg
-            n -> Error.badArgument n
 
 compile :: TI sig m => CoreProgram -> m (Seq TIMachine)
 compile ps = do
@@ -198,8 +196,6 @@ compile ps = do
     main <- lookup "main"
     modifying stack (Stack.push main)
     eval
-
-
 
 execute :: TI sig m => CoreProgram -> m Node
 execute p = compile p *> stackHead
@@ -249,7 +245,7 @@ instantiateWithUpdate e dest = do
       aft <- instantiate b
       modifying heap (Heap.update dest (NAp fore aft))
     Expr.Var n -> do
-      item <- Env.lookup n <$> ask @Env
+      item <- Env.lookup n <$> ask
       case item of
         Nothing -> error ("unbound name: " <> show n)
         Just addr -> modifying heap (Heap.update dest (NInd addr))

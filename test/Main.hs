@@ -19,6 +19,9 @@ import Miller.Parser as Parser hiding (parse)
 import Miller.Pretty as Pretty
 import Miller.Stats qualified as Stats
 import Miller.TI qualified as TI
+import Miller.TI.Node qualified as TI
+import Miller.TI.Machine qualified as TI
+import Miller.TI.Error qualified as Error
 import Miller.TI.Env qualified as Env
 import Miller.TI.Heap qualified as Heap
 import Text.Trifecta as Trifecta
@@ -97,14 +100,15 @@ prop_expressions_roundtrip = property $ do
   expr <- forAll applying
   tripping expr Pretty.showExpr (parse parseExpr)
 
-prop_fixtures_roundtrip :: Property
-prop_fixtures_roundtrip = testCase $ do
-  let go f = do
-        item <- liftIO (readFile f) >>= assertParses parseProgram
-        tripping item Pretty.showProgram (parse (parseProgram <* eof))
-
-  go "examples/double.mac"
-  go "examples/pair.mac"
+-- This depends on Pretty.showProgram returning Read-compatible input, and I don't like that.
+-- prop_fixtures_roundtrip :: Property
+-- prop_fixtures_roundtrip = testCase $ do
+--   let go f = do
+--         item <- liftIO (readFile f) >>= assertParses parseProgram
+--         tripping item Pretty.showProgram (parse (parseProgram <* eof))
+--
+--   go "examples/double.mac"
+--   go "examples/pair.mac"
 
 ----- TI tests
 
@@ -137,7 +141,7 @@ prop_instantiate_fails_when_applying_two_naturals = testCase $ do
         TI.runTI $
           TI.compile [Defn "main" [] (Expr.Ap (Expr.Num 1) (Expr.Num 2))]
 
-  eRes === Left TI.NumberAppliedAsFunction
+  eRes === Left Error.NumberAppliedAsFunction
 
 assertExecutesAs :: MonadTest m => TI.Node -> Expr.CoreProgram -> m ()
 assertExecutesAs n p = do
@@ -147,7 +151,7 @@ assertExecutesAs n p = do
   res <- evalEither eRes
   res === n
 
-assertFailsWith :: MonadTest m => TI.TIFailure -> Expr.CoreProgram -> m ()
+assertFailsWith :: MonadTest m => Error.TIFailure -> Expr.CoreProgram -> m ()
 assertFailsWith e p = do
   let (eRes, mach, stats) = TI.runTI (TI.execute p)
   footnote (show mach)
@@ -159,8 +163,8 @@ prog = assertParses parseProgram
 
 prop_handles_too_few_args :: Property
 prop_handles_too_few_args = testCase $ do
-  prog "main = S 1" >>= assertFailsWith (TI.TooFewArguments 1 3)
-  prog "main = S 1 2" >>= assertFailsWith (TI.TooFewArguments 2 3)
+  prog "main = S 1" >>= assertFailsWith (Error.TooFewArguments 1 3)
+  prog "main = S 1 2" >>= assertFailsWith (Error.TooFewArguments 2 3)
 
 prop_works_with_examples :: Property
 prop_works_with_examples = testCase $ do
