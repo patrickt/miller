@@ -259,7 +259,7 @@ instantiateWithUpdate e dest = do
     Expr.Var n -> do
       item <- Env.lookup n <$> ask
       case item of
-        Nothing -> error ("unbound name: " <> show n)
+        Nothing -> Error.unboundName n
         Just addr -> modifying Machine.heap (Heap.update dest (NInd addr))
     Expr.Let {} -> do
       addr <- instantiate e
@@ -270,7 +270,7 @@ instantiateWithUpdate e dest = do
     Unary op arg -> do
       addr <- instantiate (Expr.Ap (Expr.Var (unOpToName op)) arg)
       modifying Machine.heap (Heap.update dest (NInd addr))
-    other -> error ("unimplemented: " <> show other)
+    other -> Error.unimplemented other
 
 -- Compile and run a program, returning the set of all seen states.
 compile :: TI sig m => CoreProgram -> m (Seq Machine)

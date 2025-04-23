@@ -3,25 +3,41 @@
 
 module Main where
 
-import Options.Generic
 import Miller.Parser (parseIO)
 import Miller.Pretty (showProgram, renderShow, renderShow)
 import Miller.TI qualified as TI
+import Miller.TI.Node qualified as Node
+import Options.Applicative qualified as Opt
 
 data Cli
   = Parse FilePath
   | Ast FilePath
-  | Run FilePath
-    deriving stock (Show, Eq, Generic)
-    deriving anyclass ParseRecord
+  | Run FilePath Bool
+    deriving stock (Show, Eq)
+
+-- I hate this library.
+cliParser :: Opt.Parser Cli
+cliParser = Opt.hsubparser (mconcat [parseCommand, astCommand, runCommand])
+  where
+    cmd name p desc = Opt.command name (Opt.info p (Opt.progDesc desc))
+    file = Opt.argument Opt.str (Opt.metavar "[FILENAME]")
+    doRun = Run <$> file <*> Opt.switch (Opt.long "debug" <> Opt.help "Enable debugger")
+    parseCommand = cmd "parse" (Parse <$> file) "parse and print source"
+    astCommand = cmd "ast" (Ast <$> file) "parse and print AST"
+    runCommand = cmd "run" doRun "run some source"
 
 run :: Cli -> IO ()
-run (Run file) = do
+run (Run file dbg) = do
   eAST <- parseIO file
   case eAST of
     Left err -> fail err
     Right p -> do
-      (eRes, mach, stats) <- TI.debugTI (TI.execute p)
+      let executor = if dbg then TI.debugTI else TI.runTI
+      (eRes, mach, stats) <- executor (TI.execute p)
+      case eRes of
+        Left err -> putStrLn ("error: " <> show err)
+        Right (Node.NNum i) -> print i
+        Right other -> print other
       print eRes
       putStrLn "***"
       putStrLn (renderShow mach)
@@ -40,5 +56,5 @@ run (Parse file) = do
 
 main :: IO ()
 main = do
-  opts <- getRecord "miller: a little ML"
+  opts <- Opt.execParser (Opt.info (cliParser Opt.<**> Opt.helper) Opt.fullDesc)
   run opts

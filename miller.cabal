@@ -57,7 +57,6 @@ executable runmiller
   ghc-options: -Wall
   build-depends: miller
                , optparse-applicative
-               , optparse-generic
 
 test-suite miller-test
   import:         shared
