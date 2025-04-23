@@ -228,26 +228,27 @@ instantiateWithUpdate ::
   Addr ->
   m ()
 instantiateWithUpdate e dest = do
+  let update = modifying Machine.heap . Heap.update dest
   case e of
-    Expr.Num i -> modifying Machine.heap (Heap.update dest (NNum i))
+    Expr.Num i -> update (NNum i)
     Expr.Ap a b -> do
       fore <- instantiate a
       aft <- instantiate b
-      modifying Machine.heap (Heap.update dest (NAp fore aft))
+      update (NAp fore aft)
     Expr.Var n -> do
       item <- Env.lookup n <$> ask
       case item of
         Nothing -> Error.unboundName n
-        Just addr -> modifying Machine.heap (Heap.update dest (NInd addr))
+        Just addr -> update (NInd addr)
     Expr.Let {} -> do
       addr <- instantiate e
-      modifying Machine.heap (Heap.update dest (NInd addr))
-    Binary op left right -> do
-      addr <- instantiate (Expr.Ap (Expr.Ap (Expr.Var (binOpToName op)) left) right)
-      modifying Machine.heap (Heap.update dest (NInd addr))
-    Unary op arg -> do
-      addr <- instantiate (Expr.Ap (Expr.Var (unOpToName op)) arg)
-      modifying Machine.heap (Heap.update dest (NInd addr))
+      update (NInd addr)
+    Binary{} -> do
+      addr <- instantiate e
+      update (NInd addr)
+    Unary{} -> do
+      addr <- instantiate e
+      update (NInd addr)
     other -> Error.unimplemented other
 
 -- Compile and run a program, returning the set of all seen states.
