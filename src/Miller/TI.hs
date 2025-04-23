@@ -11,6 +11,7 @@ import Control.Carrier.Reader
 import Control.Carrier.State.Lazy
 import Control.Carrier.Writer.Strict
 import Control.Effect.Optics
+import Control.Carrier.Lift
 import Control.Monad.Fix
 import Data.Functor.Identity
 import Data.List.NonEmpty qualified as NonEmpty
@@ -44,21 +45,24 @@ type TI sig m =
 -- stats, and failure (this last is hinky due to laziness).
 type TIMonad = ReaderC (Env Addr)
                (ErrorC TIFailure
-                (WriterC Stats
-                 (StateC TIMachine Identity)
-                )
+                 (WriterC Stats
+                  (StateC TIMachine
+                   (LiftC IO)
+                  )
+                 )
                )
 
 -- Run a template instantiation invocation with an empty starting state.
-runTI :: TIMonad a -> (Either TIFailure a, TIMachine, Stats)
+runTI :: MonadIO m => TIMonad a -> m (Either TIFailure a, TIMachine, Stats)
 runTI = runTI' mempty
 
 -- Run a template instantiation invocation with a specified starting state.
-runTI' :: TIMachine -> TIMonad a -> (Either TIFailure a, TIMachine, Stats)
+runTI' :: MonadIO m => TIMachine -> TIMonad a -> m (Either TIFailure a, TIMachine, Stats)
 runTI' start go =
   let flatten (a, (b, c)) = (c, a, b)
-   in flatten
-      . run
+   in fmap flatten
+      . liftIO
+      . runM
       . runState start
       . runWriter
       . runError
@@ -150,8 +154,7 @@ primStep (Right op) = Error.unimplemented op
   -- let recur item = find item >>= \case
   --       NNum x' -> pure x'
   --       NInd x' -> recur x'
-  --       NAp left right -> do
-  --         currStack <- uses stack
+  --       NAp left right -> do  --         currStack <- uses stack
   --         modifying dump (Stack.push currStack)
   --         assign stack (pure (NAp left right))
   --         pure Nothing

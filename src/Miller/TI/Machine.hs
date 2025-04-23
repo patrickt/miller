@@ -73,3 +73,6 @@ operators = [("*", Right Expr.Mul),
              ("-", Right Expr.Sub),
              ("~", Left Expr.Neg)
              ]
+
+data DebugMode = Run | Debug
+  deriving (Show, Eq)

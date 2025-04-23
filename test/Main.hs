@@ -119,7 +119,7 @@ prop_ti_allocateSC_registers_heap_entry :: Property
 prop_ti_allocateSC_registers_heap_entry = property $ do
   names <- nub <$> forAll (Gen.list (Range.constant 5 25) name)
   let count = length names
-  let (eRes, mach, _stats) = TI.runTI $
+  (eRes, mach, _stats) <- TI.runTI $
         for names $ \name -> TI.allocateSC (Defn name [] (Num 1))
 
   res <- evalEither eRes
@@ -130,30 +130,30 @@ prop_ti_allocateSC_registers_heap_entry = property $ do
 
 prop_eval_finalized_machine_is_noop :: Property
 prop_eval_finalized_machine_is_noop = testCase $ do
-  let (res, mach, stats) = TI.runTI' TI.stoppedMachine TI.eval
+  (res, mach, stats) <- TI.runTI' TI.stoppedMachine TI.eval
   footnote (Pretty.renderShow mach)
   res === Right [TI.stoppedMachine]
   Stats.steps stats === 0
 
 prop_instantiate_fails_when_applying_two_naturals :: Property
 prop_instantiate_fails_when_applying_two_naturals = testCase $ do
-  let (eRes, _mach, _stats) =
+  (eRes, _mach, _stats) <-
         TI.runTI $
           TI.compile [Defn "main" [] (Expr.Ap (Expr.Num 1) (Expr.Num 2))]
 
   eRes === Left Error.NumberAppliedAsFunction
 
-assertExecutesAs :: MonadTest m => TI.Node -> Expr.CoreProgram -> m ()
+assertExecutesAs :: (MonadIO m, MonadTest m) => TI.Node -> Expr.CoreProgram -> m ()
 assertExecutesAs n p = do
-  let (eRes, mach, stats) = TI.runTI (TI.execute p)
+  (eRes, mach, stats) <- TI.runTI (TI.execute p)
   annotate (Pretty.renderShow mach)
   footnote (Pretty.renderShow stats)
   res <- evalEither eRes
   res === n
 
-assertFailsWith :: MonadTest m => Error.TIFailure -> Expr.CoreProgram -> m ()
+assertFailsWith :: (MonadIO m, MonadTest m) => Error.TIFailure -> Expr.CoreProgram -> m ()
 assertFailsWith e p = do
-  let (eRes, mach, stats) = TI.runTI (TI.execute p)
+  (eRes, mach, stats) <- TI.runTI (TI.execute p)
   footnote (show mach)
   footnote (show stats)
   eRes === Left e
