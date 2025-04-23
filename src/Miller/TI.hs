@@ -29,6 +29,7 @@ import Miller.TI.Machine (DebugMode (..), Machine, debugger)
 import Miller.TI.Machine qualified as Machine
 import Miller.TI.Node
 import Miller.TI.Stack qualified as Stack
+import Miller.TI.Stack (Stack)
 import Prelude hiding (lookup)
 
 type TI sig m =
@@ -166,7 +167,36 @@ apStep f _x = modifying Machine.stack (Stack.push f)
 
 -- Primitive step (unimplemented)
 primStep :: (TI sig m) => Either UnOp BinOp -> m ()
-primStep (Left x) = Error.unimplemented x
+primStep (Left Neg) = do
+  given <- uses Machine.stack (Stack.contents . Stack.take 2)
+  debugger "unop primitive application"
+  case given of
+    [negAddr, apAddr] -> do
+      arg <- find apAddr
+      case arg of
+        NNum val -> do
+          modifying Machine.stack (Stack.drop 1)
+          modifying Machine.heap (Heap.update apAddr (NNum (negate val)))
+        NAp _func arg' -> do
+          debugger ("arg is " <> show arg')
+          currStack <- use Machine.stack
+          modifying Machine.dump (Stack.push currStack)
+          assign Machine.stack (pure arg')
+          void eval
+          result <- stackHead
+          lastStack <- Stack.first <$> withinState Machine.dump (Stack.pop 1)
+          debugger ("last stack" <> show lastStack)
+          maybeM Error.emptyStack lastStack >>= assign Machine.stack
+          case result of
+            NNum a -> modifying Machine.heap (Heap.update apAddr (NNum (negate a)))
+            other -> Error.badArgument other
+          modifying Machine.stack (Stack.drop 1)
+          debugger "done modifying"
+        other -> Error.unimplemented other
+    [] -> Error.emptyStack
+    other : _rest -> find other >>= Error.badArgument
+
+  
 primStep (Right op) = Error.unimplemented op
 
 -- Supercombinator step: apply a function, given args and body
@@ -187,7 +217,7 @@ scStep _name args body = do
   local (mappend argBindings) (instantiateWithUpdate body root)
   debugger "scStep: after instantiation"
   -- Discard arguments from stack (including root)
-  modifying Machine.stack (Stack.pop needed)
+  modifying Machine.stack (Stack.drop needed)
   Stats.reduction
 
 -- Given a redex, instantiate it and return its address on the stack.

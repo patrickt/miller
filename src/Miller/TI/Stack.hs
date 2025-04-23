@@ -2,7 +2,7 @@ module Miller.TI.Stack where
 
 import Doors
 import Prettyprinter qualified as Pretty
-import Prelude hiding (length, take)
+import Prelude hiding (length, take, drop)
 import Prelude qualified
 
 newtype Stack a = Stack {contents :: [a]}
@@ -16,7 +16,7 @@ push :: a -> Stack a -> Stack a
 push x (Stack s) = Stack (x : s)
 
 replace :: a -> Stack a -> Stack a
-replace x (Stack s) = Stack (x : drop 1 s)
+replace x (Stack s) = Stack (x : Prelude.drop 1 s)
 
 length :: Stack a -> Int
 length (Stack s) = Prelude.length s
@@ -27,8 +27,11 @@ nth x (Stack s) = s !! x
 first :: Stack a -> Maybe a
 first (Stack s) = listToMaybe s
 
-pop :: Int -> Stack a -> Stack a
-pop n (Stack s) = Stack (drop n s)
+drop :: Int -> Stack a -> Stack a
+drop n (Stack s) = Stack (Prelude.drop n s)
+
+pop :: Int -> Stack a -> (Stack a, Stack a)
+pop n (Stack s) = (Stack rest, Stack prefix) where (prefix, rest) = splitAt n s
 
 take :: Int -> Stack a -> Stack a
 take n (Stack s) = Stack (Prelude.take n s)

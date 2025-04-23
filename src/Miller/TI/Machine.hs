@@ -64,6 +64,7 @@ machineStatus m =
         [sole]
           | Stack.isEmpty (m ^. dump) ->
               maybe Crashed decide (m ^. heap % to (Heap.lookup sole))
+          | maybe False isDataNode (m ^. heap % to (Heap.lookup sole)) -> Stopped
         _ -> Active
 
 -- All operators supported in the TI machine.
