@@ -136,7 +136,8 @@ eval = execWriter @(Seq Machine) go
 
 -- Run one step of template instantiation.
 step :: TI sig m => m ()
-step =
+step = do
+  Stats.step
   stackHead >>= \case
     NNum n -> numStep n
     NAp f x -> apStep f x

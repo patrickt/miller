@@ -8,11 +8,12 @@ import Miller.Pretty (showProgram, renderShow, renderShow)
 import Miller.TI qualified as TI
 import Miller.TI.Node qualified as Node
 import Options.Applicative qualified as Opt
+import Doors
 
 data Cli
   = Parse FilePath
   | Ast FilePath
-  | Run FilePath Bool
+  | Run FilePath Bool Bool
     deriving stock (Show, Eq)
 
 -- I hate this library.
@@ -21,13 +22,17 @@ cliParser = Opt.hsubparser (mconcat [parseCommand, astCommand, runCommand])
   where
     cmd name p desc = Opt.command name (Opt.info p (Opt.progDesc desc))
     file = Opt.argument Opt.str (Opt.metavar "[FILENAME]")
-    doRun = Run <$> file <*> Opt.switch (Opt.long "debug" <> Opt.help "Enable debugger")
+    doRun
+      = Run
+      <$> file
+      <*> Opt.switch (Opt.long "debug" <> Opt.help "Enable debugger")
+      <*> Opt.switch (Opt.long "stats" <> Opt.help "Print stats")
     parseCommand = cmd "parse" (Parse <$> file) "parse and print source"
     astCommand = cmd "ast" (Ast <$> file) "parse and print AST"
     runCommand = cmd "run" doRun "run some source"
 
 run :: Cli -> IO ()
-run (Run file dbg) = do
+run (Run file dbg showStats) = do
   eAST <- parseIO file
   case eAST of
     Left err -> fail err
@@ -38,11 +43,11 @@ run (Run file dbg) = do
         Left err -> putStrLn ("error: " <> show err)
         Right (Node.NNum i) -> print i
         Right other -> print other
-      print eRes
-      putStrLn "***"
-      putStrLn (renderShow mach)
-      putStrLn "***"
-      putStrLn (renderShow stats)
+      when showStats $ do
+        putStrLn "***"
+        putStrLn (renderShow mach)
+        putStrLn "***"
+        putStrLn (renderShow stats)
 run (Ast file) = do
   eAST <- parseIO file
   case eAST of
