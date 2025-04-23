@@ -21,7 +21,7 @@ run (Run file) = do
   case eAST of
     Left err -> fail err
     Right p -> do
-      (eRes, mach, stats) <- TI.runTI (TI.execute p)
+      (eRes, mach, stats) <- TI.debugTI (TI.execute p)
       print eRes
       putStrLn "***"
       putStrLn (renderShow mach)

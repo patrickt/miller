@@ -4,15 +4,19 @@
 
 module Miller.TI.Machine where
 
+import Control.Effect.Reader
+import Control.Effect.State
 import GHC.Generics (Generic, Generically (..))
 import Optics
 import Prettyprinter qualified as Pretty
 import Prettyprinter ((<+>))
+import System.IO
 
 import Doors hiding (find)
 import Miller.Expr as Expr
 import Miller.Stats (Stats)
 import Miller.Stats qualified as Stats
+import Miller.Pretty (renderPrint)
 import Miller.TI.Env qualified as Env
 import Miller.TI.Heap (Addr, Heap)
 import Miller.TI.Heap qualified as Heap
@@ -76,3 +80,18 @@ operators = [("*", Right Expr.Mul),
 
 data DebugMode = Run | Debug
   deriving (Show, Eq)
+
+debugger ::
+  (MonadIO m, Has (Reader DebugMode) sig m, Has (State TIMachine) sig m) =>
+  String ->
+  m ()
+debugger msg = do
+  dbg <- ask
+  mach <- get @TIMachine
+  when (dbg == Debug) $ liftIO $ do
+    putStrLn ("Debug: " <> msg)
+    renderPrint mach
+    hFlush stdout
+    putStr ">>> "
+    hFlush stdout
+    void getLine

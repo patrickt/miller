@@ -5,6 +5,7 @@ module Miller.Pretty
   ( showExpr,
     showProgram,
     renderShow,
+    renderPrint,
     renderDoc,
   )
 where
@@ -20,6 +21,9 @@ renderDoc = Pretty.renderString . layoutSmart defaultLayoutOptions
 
 renderShow :: Pretty a => a -> String
 renderShow = renderDoc . pretty
+
+renderPrint :: (MonadIO m, Pretty a) => a -> m ()
+renderPrint = liftIO . putStrLn . renderShow
 
 showExpr :: CoreExpr -> String
 showExpr = renderDoc . prettyExpr

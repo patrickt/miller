@@ -13,7 +13,6 @@ import Control.Carrier.Writer.Strict
 import Control.Effect.Optics
 import Control.Carrier.Lift
 import Control.Monad.Fix
-import Data.Functor.Identity
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Sequence (Seq)
 
@@ -36,29 +35,41 @@ import Prelude hiding (lookup)
 type TI sig m =
   ( Has (State TIMachine) sig m,
     Has (Reader (Env Addr)) sig m,
+    Has (Reader DebugMode) sig m,
     Has (Writer Stats) sig m,
     Has (Error Error.TIFailure) sig m,
-    MonadFix m
+    MonadFix m,
+    MonadIO m
   )
 
 -- Keeps track of an immutable environment, a lazy machine state,
 -- stats, and failure (this last is hinky due to laziness).
 type TIMonad = ReaderC (Env Addr)
-               (ErrorC TIFailure
-                 (WriterC Stats
-                  (StateC TIMachine
-                   (LiftC IO)
+               (ReaderC DebugMode
+                (ErrorC TIFailure
+                  (WriterC Stats
+                   (StateC TIMachine
+                    (LiftC IO)
+                   )
                   )
-                 )
+                )
                )
 
 -- Run a template instantiation invocation with an empty starting state.
 runTI :: MonadIO m => TIMonad a -> m (Either TIFailure a, TIMachine, Stats)
-runTI = runTI' mempty
+runTI = runTI' mempty Run
+
+-- Run a template instantiation invocation with an empty starting state.
+debugTI :: MonadIO m => TIMonad a -> m (Either TIFailure a, TIMachine, Stats)
+debugTI = runTI' mempty Debug
 
 -- Run a template instantiation invocation with a specified starting state.
-runTI' :: MonadIO m => TIMachine -> TIMonad a -> m (Either TIFailure a, TIMachine, Stats)
-runTI' start go =
+runTI' :: MonadIO m =>
+  TIMachine ->
+  DebugMode ->
+  TIMonad a ->
+  m (Either TIFailure a, TIMachine, Stats)
+runTI' start dbg go =
   let flatten (a, (b, c)) = (c, a, b)
    in fmap flatten
       . liftIO
@@ -66,6 +77,7 @@ runTI' start go =
       . runState start
       . runWriter
       . runError
+      . runReader dbg
       . runReader (mempty :: Env Addr)
       $ go
 
@@ -187,9 +199,13 @@ scStep _name args body = do
     then Error.tooFewArguments given needed
     else uses stack (Stack.nth needed)
 
+  debugger "scStep: before instantiation"
+
   -- Bind argument names to addresses
   argBindings <- Env.fromBindings args <$> stackContents (succ needed)
   local (mappend argBindings) (instantiateWithUpdate body root)
+
+  debugger "scStep: after instantiation"
 
   -- Discard arguments from stack (including root)
   modifying stack (Stack.push root . Stack.pop (succ needed))

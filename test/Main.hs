@@ -130,7 +130,7 @@ prop_ti_allocateSC_registers_heap_entry = property $ do
 
 prop_eval_finalized_machine_is_noop :: Property
 prop_eval_finalized_machine_is_noop = testCase $ do
-  (res, mach, stats) <- TI.runTI' TI.stoppedMachine TI.eval
+  (res, mach, stats) <- TI.runTI' TI.stoppedMachine TI.Run TI.eval
   footnote (Pretty.renderShow mach)
   res === Right [TI.stoppedMachine]
   Stats.steps stats === 0
