@@ -1,16 +1,15 @@
 module Miller.TI.Stack where
 
-import Prelude qualified
-import Prelude hiding (length, take)
-import Prettyprinter qualified as Pretty
-import Miller.TI.Heap (Addr)
 import Doors
+import Prettyprinter qualified as Pretty
+import Prelude hiding (length, take)
+import Prelude qualified
 
-newtype Stack a = Stack { contents :: [a] }
+newtype Stack a = Stack {contents :: [a]}
   deriving stock (Show, Eq)
   deriving newtype (Semigroup, Monoid, Functor, Applicative)
 
-instance Pretty.Pretty a => Pretty.Pretty (Stack a) where
+instance (Pretty.Pretty a) => Pretty.Pretty (Stack a) where
   pretty (Stack st) = Pretty.align (Pretty.list (fmap Pretty.pretty st))
 
 push :: a -> Stack a -> Stack a

@@ -37,12 +37,11 @@ where
 
 import Data.Hashable
 import Data.List.NonEmpty (NonEmpty)
-import Data.List.NonEmpty qualified
 import Data.String
 import Data.Text (Text)
-import Prettyprinter qualified as Pretty
-import Prettyprinter ((<+>), pretty)
 import GHC.Exts (IsList (..))
+import Prettyprinter (pretty, (<+>))
+import Prettyprinter qualified as Pretty
 
 newtype Name = Name Text
   deriving newtype (Eq, IsString, Pretty.Pretty, Show, Ord, Hashable)
@@ -82,7 +81,7 @@ data Expr a
   | Unary UnOp (Expr a)
   deriving (Eq, Show, Functor)
 
-instance Show a => Pretty.Pretty (Expr a) where pretty = Pretty.viaShow
+instance (Show a) => Pretty.Pretty (Expr a) where pretty = Pretty.viaShow
 
 infixl 8 $$
 
@@ -112,11 +111,12 @@ type CoreExpr = Expr Name
 data Defn a = Defn Name [a] (Expr a) deriving (Eq, Show, Functor)
 
 instance (Show a, Pretty.Pretty a) => Pretty.Pretty (Defn a) where
-  pretty (Defn name args exp)
-    = "Defn"
-      <+> pretty name <> Pretty.tupled (fmap pretty args)
+  pretty (Defn name args expr) =
+    "Defn"
+      <+> pretty name
+      <> Pretty.tupled (fmap pretty args)
       <+> "="
-      <+> pretty exp
+      <+> pretty expr
 
 isCAF :: Defn a -> Bool
 isCAF (Defn _ xs _) = null xs

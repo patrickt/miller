@@ -1,4 +1,3 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Miller.TI.Heap
@@ -15,13 +14,12 @@ module Miller.TI.Heap
   )
 where
 
-import Data.Function (on)
 import Data.IntMap.Strict (IntMap)
-import qualified Data.IntMap.Strict as IM
+import Data.IntMap.Strict qualified as IM
 import Data.Stream.Infinite (Stream (..))
-import qualified Data.Stream.Infinite as Stream
-import qualified Prettyprinter as Pretty
+import Data.Stream.Infinite qualified as Stream
 import Doors
+import Prettyprinter qualified as Pretty
 import Prelude hiding (lookup)
 
 newtype Addr = Addr Int deriving (Eq, Ord, Lower)
@@ -39,22 +37,23 @@ data Heap a = Heap
     entries :: IntMap a
   }
 
-instance Eq a => Eq (Heap a) where (==) = (==) `on` entries
+instance (Eq a) => Eq (Heap a) where (==) = (==) `on` entries
 
-instance Show a => Show (Heap a) where show = show . entries
+instance (Show a) => Show (Heap a) where show = show . entries
 
-instance Pretty a => Pretty (Heap a) where
+instance (Pretty a) => Pretty (Heap a) where
   pretty (Heap _ _ e) = do
     let pair (a, b) = pretty a <> ": " <> pretty b
     let elements = fmap pair (IM.toList e)
     Pretty.align (Pretty.list elements)
 
 instance Semigroup (Heap a) where
-  a <> b = Heap
-    { count = (max `on` count) a b
-    , fresh = fresh (if Stream.head (fresh a) > Stream.head (fresh b) then a else b)
-    , entries = (mappend `on` entries) a b
-    }
+  a <> b =
+    Heap
+      { count = (max `on` count) a b,
+        fresh = fresh (if Stream.head (fresh a) > Stream.head (fresh b) then a else b),
+        entries = (mappend `on` entries) a b
+      }
 
 instance Monoid (Heap a) where mempty = initial
 

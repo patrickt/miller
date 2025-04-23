@@ -6,20 +6,19 @@ module Miller.TI.Machine where
 
 import Control.Effect.Reader
 import Control.Effect.State
-import GHC.Generics (Generic, Generically (..))
-import Optics
-import Prettyprinter qualified as Pretty
-import Prettyprinter ((<+>))
-import System.IO
-
 import Doors hiding (find)
+import GHC.Generics (Generic, Generically (..))
 import Miller.Expr as Expr
 import Miller.Pretty (renderPrint)
 import Miller.TI.Heap (Addr, Heap)
 import Miller.TI.Heap qualified as Heap
-import Miller.TI.Stack qualified as Stack
-import Miller.TI.Stack (Stack)
 import Miller.TI.Node
+import Miller.TI.Stack (Stack)
+import Miller.TI.Stack qualified as Stack
+import Optics
+import Prettyprinter ((<+>))
+import Prettyprinter qualified as Pretty
+import System.IO
 
 data Machine = Machine
   { _stack :: Stack Addr,
@@ -36,9 +35,8 @@ instance Pretty.Pretty Machine where
     Pretty.vcat
       [ "stack" <+> "=" <+> m ^. stack % to pretty,
         "heap " <+> "=" <+> m ^. heap % to pretty,
-        "dump"  <+> "=" <+> m ^. dump % to pretty
+        "dump" <+> "=" <+> m ^. dump % to pretty
       ]
-
 
 -- Machines can be crashed, stopped, or active.
 data Status
@@ -63,17 +61,19 @@ machineStatus m =
   let decide x = if isDataNode x then Stopped else Active
    in case m ^. stack % to Stack.contents of
         [] -> Crashed
-        [sole] | Stack.isEmpty (m ^. dump)
-                 -> maybe Crashed decide (m ^. heap % to (Heap.lookup sole))
+        [sole]
+          | Stack.isEmpty (m ^. dump) ->
+              maybe Crashed decide (m ^. heap % to (Heap.lookup sole))
         _ -> Active
 
 -- All operators supported in the TI machine.
 operators :: [(Name, Either Expr.UnOp Expr.BinOp)]
-operators = [("*", Right Expr.Mul),
-             ("+", Right Expr.Add),
-             ("-", Right Expr.Sub),
-             ("~", Left Expr.Neg)
-             ]
+operators =
+  [ ("*", Right Expr.Mul),
+    ("+", Right Expr.Add),
+    ("-", Right Expr.Sub),
+    ("~", Left Expr.Neg)
+  ]
 
 data DebugMode = Run | Debug
   deriving (Show, Eq)

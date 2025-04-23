@@ -1,9 +1,8 @@
 module Miller.TI.Node where
 
+import Miller.Expr (BinOp, CoreExpr, Name, UnOp)
+import Miller.TI.Heap (Addr)
 import Prettyprinter qualified as Pretty
-
-import Miller.TI.Heap (Addr, Heap)
-import Miller.Expr (CoreExpr, UnOp, BinOp, Name)
 
 -- Nodes in the TI graph.
 data Node
@@ -13,7 +12,6 @@ data Node
   | NInd Addr
   | NPrim (Either UnOp BinOp)
   deriving (Eq, Show)
-
 
 instance Pretty.Pretty Node where pretty = Pretty.viaShow
 

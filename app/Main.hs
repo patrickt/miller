@@ -3,18 +3,18 @@
 
 module Main where
 
+import Doors
 import Miller.Parser (parseIO)
-import Miller.Pretty (showProgram, renderShow, renderShow)
+import Miller.Pretty (renderShow, showProgram)
 import Miller.TI qualified as TI
 import Miller.TI.Node qualified as Node
 import Options.Applicative qualified as Opt
-import Doors
 
 data Cli
   = Parse FilePath
   | Ast FilePath
   | Run FilePath Bool Bool
-    deriving stock (Show, Eq)
+  deriving stock (Show, Eq)
 
 -- I hate this library.
 cliParser :: Opt.Parser Cli
@@ -22,11 +22,11 @@ cliParser = Opt.hsubparser (mconcat [parseCommand, astCommand, runCommand])
   where
     cmd name p desc = Opt.command name (Opt.info p (Opt.progDesc desc))
     file = Opt.argument Opt.str (Opt.metavar "[FILENAME]")
-    doRun
-      = Run
-      <$> file
-      <*> Opt.switch (Opt.long "debug" <> Opt.help "Enable debugger")
-      <*> Opt.switch (Opt.long "stats" <> Opt.help "Print stats")
+    doRun =
+      Run
+        <$> file
+        <*> Opt.switch (Opt.long "debug" <> Opt.help "Enable debugger")
+        <*> Opt.switch (Opt.long "stats" <> Opt.help "Print stats")
     parseCommand = cmd "parse" (Parse <$> file) "parse and print source"
     astCommand = cmd "ast" (Ast <$> file) "parse and print AST"
     runCommand = cmd "run" doRun "run some source"

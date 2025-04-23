@@ -17,8 +17,8 @@ import Control.Carrier.Writer.Strict
 import Data.Monoid
 import Data.Monoid.Generic
 import Data.Semigroup
-import Prettyprinter
 import GHC.Generics
+import Prettyprinter
 
 data Stats = Stats
   { steps :: Sum Int,

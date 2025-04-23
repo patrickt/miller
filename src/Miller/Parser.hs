@@ -17,7 +17,7 @@ import Data.Text (Text)
 import Miller.Expr
 import Text.Parser.Expression
 import Text.Parser.Token as Token
-import qualified Text.Parser.Token.Highlight as HL
+import Text.Parser.Token.Highlight qualified as HL
 import Text.Trifecta
 
 keywords :: [Text]
@@ -63,7 +63,7 @@ operators =
 parseExpr :: (Monad m, TokenParsing m) => m CoreExpr
 parseExpr = buildExpressionParser operators parseAtomic `chainl1` pure Ap <?> "expression"
 
-equals :: TokenParsing m => m ()
+equals :: (TokenParsing m) => m ()
 equals = void (symbolic '=')
 
 bindings :: (Monad m, TokenParsing m) => m (NonEmpty (Name, CoreExpr))
@@ -83,7 +83,7 @@ parseRec =
       Rec <$ reserved "letrec"
     ]
 
-lambda :: TokenParsing m => m Char
+lambda :: (TokenParsing m) => m Char
 lambda = token (oneOf "\\λ")
 
 parseProgram :: (Monad m, TokenParsing m) => m CoreProgram

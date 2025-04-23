@@ -13,17 +13,17 @@ import Hedgehog.Gen qualified as Gen
 import Hedgehog.Internal.Gen qualified as Gen (ensure)
 import Hedgehog.Internal.Property (failWith)
 import Hedgehog.Range qualified as Range
-import Optics.Getter
 import Miller.Expr as Expr
 import Miller.Parser as Parser hiding (parse)
 import Miller.Pretty as Pretty
 import Miller.Stats qualified as Stats
 import Miller.TI qualified as TI
-import Miller.TI.Node qualified as TI
-import Miller.TI.Machine qualified as TI
-import Miller.TI.Error qualified as Error
 import Miller.TI.Env qualified as Env
+import Miller.TI.Error qualified as Error
 import Miller.TI.Heap qualified as Heap
+import Miller.TI.Machine qualified as TI
+import Miller.TI.Node qualified as TI
+import Optics.Getter
 import Text.Trifecta as Trifecta
 import Text.Trifecta.Result qualified as Result
 
@@ -54,7 +54,7 @@ applying = Gen.recursive Gen.choice recurs nonrecurs
     recurs = [Var <$> name, Num <$> Gen.integral (Range.linear 1 10)]
     nonrecurs = [Gen.subterm2 (Var <$> name) applying Ap]
 
-testCase :: HasCallStack => PropertyT IO () -> Property
+testCase :: (HasCallStack) => PropertyT IO () -> Property
 testCase = withTests 1 . property
 
 prop_parens_in_nested_app :: Property
@@ -68,7 +68,7 @@ assertParses p s = foldResult describe pure (parseString (p <* eof) mempty s)
   where
     describe info = withFrozenCallStack $ failWith Nothing $ renderDoc (() <$ _errDoc info)
 
-prop_associativity_works :: HasCallStack => Property
+prop_associativity_works :: (HasCallStack) => Property
 prop_associativity_works = testCase $ do
   res <- assertParses parseExpr "f g h i"
   res === ((Var "f" $$ Var "g") $$ Var "h") $$ Var "i"
@@ -120,7 +120,8 @@ prop_ti_allocateSC_registers_heap_entry = property $ do
   names <- nub <$> forAll (Gen.list (Range.constant 5 25) name)
   let count = length names
   (eRes, mach, _stats) <- TI.runTI $
-        for names $ \name -> TI.allocateSC (Defn name [] (Num 1))
+    for names $
+      \name -> TI.allocateSC (Defn name [] (Num 1))
 
   res <- evalEither eRes
   Heap.count (view TI.heap mach) === count
@@ -138,8 +139,8 @@ prop_eval_finalized_machine_is_noop = testCase $ do
 prop_instantiate_fails_when_applying_two_naturals :: Property
 prop_instantiate_fails_when_applying_two_naturals = testCase $ do
   (eRes, _mach, _stats) <-
-        TI.runTI $
-          TI.compile [Defn "main" [] (Expr.Ap (Expr.Num 1) (Expr.Num 2))]
+    TI.runTI $
+      TI.compile [Defn "main" [] (Expr.Ap (Expr.Num 1) (Expr.Num 2))]
 
   eRes === Left Error.NumberAppliedAsFunction
 
@@ -158,7 +159,7 @@ assertFailsWith e p = do
   footnote (show stats)
   eRes === Left e
 
-prog :: MonadTest m => String -> m CoreProgram
+prog :: (MonadTest m) => String -> m CoreProgram
 prog = assertParses parseProgram
 
 prop_handles_too_few_args :: Property

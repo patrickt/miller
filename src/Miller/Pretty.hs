@@ -11,15 +11,15 @@ module Miller.Pretty
 where
 
 import Data.List.NonEmpty (NonEmpty)
-import Prettyprinter
-import qualified Prettyprinter.Render.String as Pretty
 import Doors
 import Miller.Expr
+import Prettyprinter
+import Prettyprinter.Render.String qualified as Pretty
 
 renderDoc :: Doc a -> String
 renderDoc = Pretty.renderString . layoutSmart defaultLayoutOptions
 
-renderShow :: Pretty a => a -> String
+renderShow :: (Pretty a) => a -> String
 renderShow = renderDoc . pretty
 
 renderPrint :: (MonadIO m, Pretty a) => a -> m ()
