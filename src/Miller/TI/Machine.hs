@@ -14,27 +14,24 @@ import System.IO
 
 import Doors hiding (find)
 import Miller.Expr as Expr
-import Miller.Stats (Stats)
-import Miller.Stats qualified as Stats
 import Miller.Pretty (renderPrint)
-import Miller.TI.Env qualified as Env
 import Miller.TI.Heap (Addr, Heap)
 import Miller.TI.Heap qualified as Heap
 import Miller.TI.Stack qualified as Stack
 import Miller.TI.Stack (Stack)
 import Miller.TI.Node
 
-data TIMachine = TIMachine
+data Machine = Machine
   { _stack :: Stack Addr,
     _heap :: Heap Node,
     _dump :: Stack (Stack Addr)
   }
   deriving stock (Eq, Show, Generic)
-  deriving (Monoid, Semigroup) via Generically TIMachine
+  deriving (Monoid, Semigroup) via Generically Machine
 
-makeLenses ''TIMachine
+makeLenses ''Machine
 
-instance Pretty.Pretty TIMachine where
+instance Pretty.Pretty Machine where
   pretty m =
     Pretty.vcat
       [ "stack" <+> "=" <+> m ^. stack % to pretty,
@@ -50,18 +47,18 @@ data Status
   | Active
   deriving (Eq, Show)
 
-stoppedMachine :: TIMachine
+stoppedMachine :: Machine
 stoppedMachine =
-  TIMachine
+  Machine
     { _stack = Stack.Stack [lowerBound],
       _heap = Heap.update lowerBound (NNum 1) Heap.initial,
       _dump = mempty
     }
 
-isFinal :: TIMachine -> Bool
+isFinal :: Machine -> Bool
 isFinal m = machineStatus m /= Active
 
-machineStatus :: TIMachine -> Status
+machineStatus :: Machine -> Status
 machineStatus m =
   let decide x = if isDataNode x then Stopped else Active
    in case m ^. stack % to Stack.contents of
@@ -82,12 +79,12 @@ data DebugMode = Run | Debug
   deriving (Show, Eq)
 
 debugger ::
-  (MonadIO m, Has (Reader DebugMode) sig m, Has (State TIMachine) sig m) =>
+  (MonadIO m, Has (Reader DebugMode) sig m, Has (State Machine) sig m) =>
   String ->
   m ()
 debugger msg = do
   dbg <- ask
-  mach <- get @TIMachine
+  mach <- get @Machine
   when (dbg == Debug) $ liftIO $ do
     putStrLn ("Debug: " <> msg)
     renderPrint mach
