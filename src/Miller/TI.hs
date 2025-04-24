@@ -196,8 +196,33 @@ primStep (Left Neg) = do
     [] -> Error.emptyStack
     other : _rest -> find other >>= Error.badArgument
 
-  
-primStep (Right op) = Error.unimplemented op
+
+primStep (Right op) = do
+  given <- uses Machine.stack (Stack.contents . Stack.take 3)
+  debugger "bin primitive application"
+  case given of
+    [opAddr, leftAddr, rightAddr] -> do
+      let resolve node = case node of
+            NNum val -> pure val
+            NAp _func arg' -> do
+              currStack <- use Machine.stack
+              modifying Machine.dump (Stack.push currStack)
+              assign Machine.stack (pure arg')
+              void eval
+              result <- stackHead
+              lastStack <- Stack.first <$> withinState Machine.dump (Stack.pop 1)
+              maybeM Error.emptyStack lastStack >>= assign Machine.stack
+              case result of
+                NNum val -> pure val
+                _ -> Error.badArgument result
+            _ -> Error.unimplemented ("primStep: " <> show node)
+      leftVal <- find leftAddr >>= resolve
+      rightVal <- find rightAddr >>= resolve
+      let new = NNum (binOpToFunc op leftVal rightVal)
+      newNode <- store new
+      modifying Machine.stack (Stack.push newNode . Stack.drop 3)
+    [] -> Error.emptyStack
+    other : _rest -> find other >>= Error.badArgument
 
 -- Supercombinator step: apply a function, given args and body
 scStep :: (TI sig m) => Name -> [Name] -> CoreExpr -> m ()

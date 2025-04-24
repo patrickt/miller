@@ -23,6 +23,7 @@ module Miller.Expr
     BinOp (..),
     UnOp (..),
     binOpToName,
+    binOpToFunc,
     unOpToName,
     CoreExpr,
     isAtomic,
@@ -63,6 +64,12 @@ binOpToName b = Name $ case b of
   Add -> "+"
   Sub -> "-"
   Mul -> "*"
+
+binOpToFunc :: BinOp -> (Int -> Int -> Int)
+binOpToFunc = \case
+  Add -> (+)
+  Sub -> (-)
+  Mul -> (*)
 
 data UnOp = Neg deriving (Eq, Show)
 
