@@ -13,10 +13,10 @@ import Control.Carrier.State.Lazy
 import Control.Carrier.Writer.Strict
 import Control.Effect.Optics
 import Control.Monad.Fix
-import Data.Set (Set)
-import Data.Set qualified as Set
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Sequence (Seq)
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Doors hiding (find)
 import Miller.Expr as Expr
 import Miller.Stats (Stats)
@@ -30,8 +30,8 @@ import Miller.TI.Heap qualified as Heap
 import Miller.TI.Machine (DebugMode (..), Machine, debugger)
 import Miller.TI.Machine qualified as Machine
 import Miller.TI.Node
-import Miller.TI.Stack qualified as Stack
 import Miller.TI.Stack (Stack)
+import Miller.TI.Stack qualified as Stack
 import Prelude hiding (lookup)
 
 type Bindings = Env ()
@@ -54,17 +54,19 @@ type TIMonad =
     (Env Addr)
     ( ReaderC
         DebugMode
-        ( ReaderC Bindings
-        ( ErrorC
-            TIFailure
-            ( WriterC
-                Stats
-                ( StateC
-                    Machine
-                    (LiftC IO)
+        ( ReaderC
+            Bindings
+            ( ErrorC
+                TIFailure
+                ( WriterC
+                    Stats
+                    ( StateC
+                        Machine
+                        (LiftC IO)
+                    )
                 )
             )
-        ))
+        )
     )
 
 -- Run a template instantiation invocation with an empty starting state.
@@ -128,8 +130,6 @@ allocatePrim :: (TI sig m) => Name -> Either UnOp BinOp -> m (Name, Addr)
 allocatePrim name op = do
   addr <- store (NPrim op)
   pure (name, addr)
-
-  
 
 -- For each item on the N most recent stack entries, extract their argument
 -- (if an Ap node) or their indirect target (if an Ind node) or throw 'BadArgument'.
@@ -210,8 +210,6 @@ primStep (Left Neg) = do
         other -> Error.unimplemented other
     [] -> Error.emptyStack
     other : _rest -> find other >>= Error.badArgument
-
-
 primStep (Right op) = do
   given <- uses Machine.stack (Stack.contents . Stack.take 3)
   debugger "bin primitive application"
@@ -312,10 +310,10 @@ instantiateWithUpdate e dest = do
     Expr.Let {} -> do
       addr <- instantiate e
       update (NInd addr)
-    Binary{} -> do
+    Binary {} -> do
       addr <- instantiate e
       update (NInd addr)
-    Unary{} -> do
+    Unary {} -> do
       addr <- instantiate e
       update (NInd addr)
     other -> Error.unimplemented other
