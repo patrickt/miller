@@ -13,7 +13,7 @@ module Miller.Stats
   )
 where
 
-import Control.Carrier.Writer.Strict
+import Control.Effect.Accum
 import Data.Monoid
 import Data.Monoid.Generic
 import Data.Semigroup
@@ -30,13 +30,13 @@ data Stats = Stats
   deriving (Semigroup) via GenericSemigroup Stats
   deriving (Monoid) via GenericMonoid Stats
 
-step, allocation, reduction :: (Has (Writer Stats) sig m) => m ()
-step = tell mempty {steps = 1}
-allocation = tell mempty {allocations = 1}
-reduction = tell mempty {reductions = 1}
+step, allocation, reduction :: (Has (Accum Stats) sig m) => m ()
+step = add mempty {steps = 1}
+allocation = add mempty {allocations = 1}
+reduction = add mempty {reductions = 1}
 
-depth :: (Has (Writer Stats) sig m) => Int -> m ()
-depth n = tell mempty {maxDepth = Max n}
+depth :: (Has (Accum Stats) sig m) => Int -> m ()
+depth n = add mempty {maxDepth = Max n}
 
 instance Pretty Stats where
   pretty Stats {..} =

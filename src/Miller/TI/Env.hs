@@ -1,11 +1,11 @@
-{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -17,21 +17,18 @@ module Miller.TI.Env
     fromList,
     boundNames,
     introduce,
-    isNameIntroduced
+    isNameIntroduced,
   )
 where
 
-import Data.HashMap.Lazy qualified as Lazy (HashMap)
 import Data.HashMap.Lazy qualified as HM
-import Data.HashSet (HashSet)
-import Data.HashSet qualified as Set
-import Data.List.NonEmpty (NonEmpty)
+import Data.HashMap.Lazy qualified as Lazy (HashMap)
 import Doors
+import GHC.Generics
 import Miller.Expr
+import Optics (Ixed (ix), has, makeLenses, set, (%), (^.))
 import Prettyprinter qualified as Pretty
 import Prelude hiding (lookup)
-import GHC.Generics
-import Optics
 
 newtype Env a = Env
   { _bindings :: Lazy.HashMap Name a
@@ -48,7 +45,7 @@ instance (Pretty a) => Pretty (Env a) where
     Pretty.list elements
 
 fromList :: (Foldable f) => f (Name, a) -> Env a
-fromList bs = let b = toList bs in Env (HM.fromList b)
+fromList bs = Env { _bindings = HM.fromList (toList bs) }
 
 lookup :: Name -> Env a -> Maybe a
 lookup n (Env e) = HM.lookup n e
@@ -59,9 +56,10 @@ fromBindings n v = Env (HM.fromList (zip n v))
 boundNames :: Env a -> [Name]
 boundNames = HM.keys . _bindings
 
-introduce :: Monoid m => [Name] -> Env m -> Env m
+introduce :: Foldable f => f Name -> Env () -> Env ()
 introduce names e = set bindings updated e
-  where updated = foldr (\name acc -> HM.insert name mempty acc) (e^.bindings) names
+  where
+    updated = foldr (\name acc -> HM.insert name mempty acc) (e ^. bindings) names
 
 isNameIntroduced :: Name -> Env () -> Bool
 isNameIntroduced n = has (bindings % ix n)

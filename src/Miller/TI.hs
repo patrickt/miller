@@ -10,13 +10,11 @@ import Control.Carrier.Error.Either
 import Control.Carrier.Lift
 import Control.Carrier.Reader
 import Control.Carrier.State.Lazy
-import Control.Carrier.Writer.Strict
+import Control.Carrier.Accum.Strict
 import Control.Effect.Optics
 import Control.Monad.Fix
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Sequence (Seq)
-import Data.Set (Set)
-import Data.Set qualified as Set
 import Doors hiding (find)
 import Miller.Expr as Expr
 import Miller.Stats (Stats)
@@ -34,31 +32,38 @@ import Miller.TI.Stack (Stack)
 import Miller.TI.Stack qualified as Stack
 import Prelude hiding (lookup)
 
-type Bindings = Env ()
+-- Our machine binds names to addresses. The keys /and/ values in this environment may be
+-- bound circularly. Careless use can cause an infinite loop.
+type Bindings = Env Addr
 
+-- Because names may be bound circularly, we need another environment that binds them
+-- in a way we know is going to terminate.
+type Scope = Env ()
+
+-- A convenience alias for the required effects.
 type TI sig m =
   ( Has (State Machine) sig m,
-    Has (Reader (Env Addr)) sig m,
     Has (Reader Bindings) sig m,
+    Has (Reader Scope) sig m,
     Has (Reader DebugMode) sig m,
-    Has (Writer Stats) sig m,
+    Has (Accum Stats) sig m,
     Has (Error Error.TIFailure) sig m,
     MonadFix m,
     MonadIO m
   )
 
 -- Keeps track of an immutable environment, a lazy machine state,
--- stats, and failure (this last is hinky due to laziness).
+-- stats, and failure.
 type TIMonad =
   ReaderC
-    (Env Addr)
+    Bindings
     ( ReaderC
-        DebugMode
+        Scope
         ( ReaderC
-            Bindings
+            DebugMode
             ( ErrorC
                 TIFailure
-                ( WriterC
+                ( AccumC
                     Stats
                     ( StateC
                         Machine
@@ -90,11 +95,11 @@ runTI' start dbg go =
         . liftIO
         . runM
         . runState start
-        . runWriter
+        . runAccum (mempty :: Stats)
         . runError
-        . runReader (mempty :: Bindings)
         . runReader dbg
-        . runReader (mempty :: Env Addr)
+        . runReader (mempty :: Scope)
+        . runReader (mempty :: Bindings)
         $ go
 
 -- Register a node on the heap, returning its new address.
@@ -113,7 +118,7 @@ find a = uses Machine.heap (Heap.lookup a) >>= maybeM (Error.deadPointer a)
 -- do scope checking (since we don't use de Brujin indices or something like that)
 -- because the bindings in the environment may be defined circularly.
 introducingNames :: (TI sig m, Foldable f) => f Name -> m a -> m a
-introducingNames ns = local @Bindings (Env.introduce @() (toList ns))
+introducingNames ns = local @Scope (Env.introduce ns)
 
 -- Register a supercombinator in the heap.
 allocateSC :: (TI sig m) => Expr.CoreDefn -> m (Name, Addr)
@@ -145,11 +150,11 @@ stackContents needed = do
 
 -- Run a machine until it crashes or stops, returning the set of all seen states.
 eval :: (TI sig m) => m (Seq Machine)
-eval = execWriter @(Seq Machine) go
+eval = execAccum mempty go
   where
     go = do
       curr <- get
-      tell (pure @Seq curr)
+      add (pure @Seq curr)
       case Machine.machineStatus curr of
         Machine.Crashed -> Error.emptyStack
         Machine.Stopped -> pure ()
@@ -251,8 +256,8 @@ scStep _name args body = introducingNames args $ do
       else uses Machine.stack (Stack.nth needed)
   debugger "scStep: before instantiation"
   -- Bind argument names to addresses
-  argBindings <- Env.fromBindings args <$> stackContents (succ needed)
-  local (mappend argBindings) (instantiateWithUpdate body root)
+  argScope <- Env.fromBindings args <$> stackContents (succ needed)
+  local (mappend argScope) (instantiateWithUpdate body root)
   debugger "scStep: after instantiation"
   -- Discard arguments from stack (including root)
   modifying Machine.stack (Stack.drop needed)
@@ -278,13 +283,13 @@ instantiate e = case e of
     -- Straightforward, nonrecursive lets
     introducingNames (fmap fst binds) $ do
       newVals <- traverse (instantiate . snd) binds
-      let newBindings = Env.fromList (NonEmpty.zip (fmap fst binds) newVals)
-      local (newBindings <>) (instantiate bod)
+      let newScope = Env.fromList (NonEmpty.zip (fmap fst binds) newVals)
+      local (newScope <>) (instantiate bod)
   Let Rec binds bod ->
     introducingNames (fmap fst binds) $ mdo
-      newVals <- traverse (local (mappend newBindings) . instantiate . snd) binds
-      let newBindings = Env.fromList (NonEmpty.zip (fmap fst binds) newVals)
-      local (newBindings <>) (instantiate bod)
+      newVals <- traverse (local (mappend newScope) . instantiate . snd) binds
+      let newScope = Env.fromList (NonEmpty.zip (fmap fst binds) newVals)
+      local (newScope <>) (instantiate bod)
   Binary op left right ->
     instantiate (Expr.Ap (Expr.Ap (Expr.Var (binOpToName op)) left) right)
   Unary op arg ->
@@ -324,7 +329,7 @@ compile ps = do
   toplevels <- Env.fromList <$> traverse allocateSC (unProgram (preludeDefs <> ps))
   builtins <- Env.fromList <$> traverse (uncurry allocatePrim) Machine.operators
   local (mappend toplevels . mappend builtins) $ do
-    names <- asks @(Env Addr) Env.boundNames
+    names <- asks @(Bindings) Env.boundNames
     introducingNames names $ do
       main <- lookup "main"
       modifying Machine.stack (Stack.push main)
