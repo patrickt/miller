@@ -55,7 +55,7 @@ applying = Gen.recursive Gen.choice recurs nonrecurs
     nonrecurs = [Gen.subterm2 (Var <$> name) applying Ap]
 
 testCase :: (HasCallStack) => PropertyT IO () -> Property
-testCase = withTests 1 . property
+testCase t = withFrozenCallStack (withTests 1 . property $ t)
 
 prop_parens_in_nested_app :: Property
 prop_parens_in_nested_app = testCase $ do

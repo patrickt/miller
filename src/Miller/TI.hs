@@ -13,6 +13,8 @@ import Control.Carrier.State.Lazy
 import Control.Carrier.Writer.Strict
 import Control.Effect.Optics
 import Control.Monad.Fix
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Sequence (Seq)
 import Doors hiding (find)
@@ -32,9 +34,12 @@ import Miller.TI.Stack qualified as Stack
 import Miller.TI.Stack (Stack)
 import Prelude hiding (lookup)
 
+type Bindings = Env ()
+
 type TI sig m =
   ( Has (State Machine) sig m,
     Has (Reader (Env Addr)) sig m,
+    Has (Reader Bindings) sig m,
     Has (Reader DebugMode) sig m,
     Has (Writer Stats) sig m,
     Has (Error Error.TIFailure) sig m,
@@ -49,6 +54,7 @@ type TIMonad =
     (Env Addr)
     ( ReaderC
         DebugMode
+        ( ReaderC Bindings
         ( ErrorC
             TIFailure
             ( WriterC
@@ -58,7 +64,7 @@ type TIMonad =
                     (LiftC IO)
                 )
             )
-        )
+        ))
     )
 
 -- Run a template instantiation invocation with an empty starting state.
@@ -84,6 +90,7 @@ runTI' start dbg go =
         . runState start
         . runWriter
         . runError
+        . runReader (mempty :: Bindings)
         . runReader dbg
         . runReader (mempty :: Env Addr)
         $ go
@@ -100,6 +107,12 @@ lookup n = asks (Env.lookup n) >>= maybeM (Error.unboundName n)
 find :: (TI sig m) => Addr -> m Node
 find a = uses Machine.heap (Heap.lookup a) >>= maybeM (Error.deadPointer a)
 
+-- Introduce, but do not yet bind, names in a context. This is needed to
+-- do scope checking (since we don't use de Brujin indices or something like that)
+-- because the bindings in the environment may be defined circularly.
+introducingNames :: (TI sig m, Foldable f) => f Name -> m a -> m a
+introducingNames ns = local @Bindings (Env.introduce @() (toList ns))
+
 -- Register a supercombinator in the heap.
 allocateSC :: (TI sig m) => Expr.CoreDefn -> m (Name, Addr)
 allocateSC (Expr.Defn name args body) = do
@@ -115,6 +128,8 @@ allocatePrim :: (TI sig m) => Name -> Either UnOp BinOp -> m (Name, Addr)
 allocatePrim name op = do
   addr <- store (NPrim op)
   pure (name, addr)
+
+  
 
 -- For each item on the N most recent stack entries, extract their argument
 -- (if an Ap node) or their indirect target (if an Ind node) or throw 'BadArgument'.
@@ -226,7 +241,7 @@ primStep (Right op) = do
 
 -- Supercombinator step: apply a function, given args and body
 scStep :: (TI sig m) => Name -> [Name] -> CoreExpr -> m ()
-scStep _name args body = do
+scStep _name args body = introducingNames args $ do
   -- record depth (number of dumps)
   Stats.depth =<< uses Machine.dump Stack.length
   -- Check arity and extract the root
@@ -251,25 +266,27 @@ instantiate ::
   CoreExpr ->
   m Addr
 instantiate e = case e of
-  Expr.Num i -> withinState Machine.heap (Heap.alloc (NNum i))
+  Expr.Num i -> store (NNum i)
   Expr.Var n -> do
+    present <- asks (Env.isNameIntroduced n)
+    unless present (Error.unboundName n)
     item <- Env.lookup n <$> ask
-    pure (fromMaybe (error ("unbound name: " <> show n)) item)
+    pure (fromJust item)
   Expr.Ap f x -> do
     fun <- instantiate f
     arg <- instantiate x
     store (NAp fun arg)
   Let Non binds bod -> do
     -- Straightforward, nonrecursive lets
-    newVals <- traverse (instantiate . snd) binds
-    let newBindings = Env.fromList (NonEmpty.zip (fmap fst binds) newVals)
-    local (newBindings <>) (instantiate bod)
-  Let Rec binds bod -> mdo
-    -- newVals is defined in terms of newBindings, and vice versa
-    -- laziness is absolute witchcraft and I hate/love it
-    newVals <- traverse (local (mappend newBindings) . instantiate . snd) binds
-    let newBindings = Env.fromList (NonEmpty.zip (fmap fst binds) newVals)
-    local (newBindings <>) (instantiate bod)
+    introducingNames (fmap fst binds) $ do
+      newVals <- traverse (instantiate . snd) binds
+      let newBindings = Env.fromList (NonEmpty.zip (fmap fst binds) newVals)
+      local (newBindings <>) (instantiate bod)
+  Let Rec binds bod ->
+    introducingNames (fmap fst binds) $ mdo
+      newVals <- traverse (local (mappend newBindings) . instantiate . snd) binds
+      let newBindings = Env.fromList (NonEmpty.zip (fmap fst binds) newVals)
+      local (newBindings <>) (instantiate bod)
   Binary op left right ->
     instantiate (Expr.Ap (Expr.Ap (Expr.Var (binOpToName op)) left) right)
   Unary op arg ->
@@ -290,11 +307,8 @@ instantiateWithUpdate e dest = do
       fore <- instantiate a
       aft <- instantiate b
       update (NAp fore aft)
-    Expr.Var n -> do
-      item <- Env.lookup n <$> ask
-      case item of
-        Nothing -> Error.unboundName n
-        Just addr -> update (NInd addr)
+    Expr.Var _ ->
+      instantiate e >>= update . NInd
     Expr.Let {} -> do
       addr <- instantiate e
       update (NInd addr)
@@ -312,9 +326,11 @@ compile ps = do
   toplevels <- Env.fromList <$> traverse allocateSC (unProgram (preludeDefs <> ps))
   builtins <- Env.fromList <$> traverse (uncurry allocatePrim) Machine.operators
   local (mappend toplevels . mappend builtins) $ do
-    main <- lookup "main"
-    modifying Machine.stack (Stack.push main)
-    eval
+    names <- asks @(Env Addr) Env.boundNames
+    introducingNames names $ do
+      main <- lookup "main"
+      modifying Machine.stack (Stack.push main)
+      eval
 
 -- Compile and run a program, returning the top of the stack.
 execute :: (TI sig m) => CoreProgram -> m Node

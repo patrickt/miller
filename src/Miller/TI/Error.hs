@@ -13,6 +13,7 @@ data TIFailure
   | TooFewArguments Int Int
   | BadArgument Node
   | Unimplemented String
+  | InvariantViolated String
   deriving (Eq, Show)
 
 unboundName :: (Has (Throw TIFailure) sig m) => Name -> m a
@@ -35,3 +36,6 @@ numberAppliedAsFunction = throwError NumberAppliedAsFunction
 
 tooFewArguments :: (Has (Throw TIFailure) sig m) => Int -> Int -> m a
 tooFewArguments n = throwError . TooFewArguments n
+
+invariantViolated :: (Has (Throw TIFailure) sig m) => String -> m a
+invariantViolated = throwError . InvariantViolated
