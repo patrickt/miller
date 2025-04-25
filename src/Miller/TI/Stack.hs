@@ -7,7 +7,8 @@ import Prelude qualified
 
 newtype Stack a = Stack {contents :: [a]}
   deriving stock (Show, Eq)
-  deriving newtype (Semigroup, Monoid, Functor, Applicative)
+  deriving newtype (Semigroup, Monoid, Functor, Applicative, Foldable)
+
 
 instance (Pretty.Pretty a) => Pretty.Pretty (Stack a) where
   pretty (Stack st) = Pretty.align (Pretty.list (fmap Pretty.pretty st))
@@ -29,6 +30,10 @@ first (Stack s) = listToMaybe s
 
 drop :: Int -> Stack a -> Stack a
 drop n (Stack s) = Stack (Prelude.drop n s)
+
+popFront :: Stack a -> (Stack a, Maybe a)
+popFront (Stack (a:as)) = (Stack as, Just a)
+popFront a = (a, Nothing)
 
 pop :: Int -> Stack a -> (Stack a, Stack a)
 pop n (Stack s) = (Stack rest, Stack prefix) where (prefix, rest) = splitAt n s

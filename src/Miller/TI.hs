@@ -106,6 +106,10 @@ runTI' start dbg go =
 store :: (TI sig m) => Node -> m Addr
 store n = withinState Machine.heap (Heap.alloc n) <* Stats.allocation
 
+-- Overwrite a node at the given address with the new vale.
+overwrite :: (TI sig m) => Addr -> Node -> m ()
+overwrite addr n = modifying Machine.heap (Heap.update addr n) <* Stats.update
+
 -- Look up the address bound to a given name, or throw 'UnboundName'.
 lookup :: (TI sig m) => Name -> m Addr
 lookup n = asks (Env.lookup n) >>= maybeM (Error.unboundName n)
@@ -135,6 +139,19 @@ allocatePrim :: (TI sig m) => Name -> Either UnOp BinOp -> m (Name, Addr)
 allocatePrim name op = do
   addr <- store (NPrim op)
   pure (name, addr)
+
+-- Push the current stack onto the dump and set the stack to contain just the address argument.
+pushFrame :: (TI sig m) => Addr -> m ()
+pushFrame addr = do
+  use Machine.stack >>= modifying Machine.dump . Stack.push
+  assign Machine.stack (pure addr)
+
+-- Pop the frontmost stack off the dump, failing with 'EmptyStack' if there is none,
+-- and make it the current stack.
+popFrame :: (TI sig m) => m ()
+popFrame = do
+  recent <- withinState Machine.dump Stack.popFront
+  maybeM Error.emptyStack recent >>= assign Machine.stack
 
 -- For each item on the N most recent stack entries, extract their argument
 -- (if an Ap node) or their indirect target (if an Ind node) or throw 'BadArgument'.
@@ -191,24 +208,19 @@ primStep (Left Neg) = do
   given <- uses Machine.stack (Stack.contents . Stack.take 2)
   debugger "unop primitive application"
   case given of
-    [negAddr, apAddr] -> do
+    [_negAddr, apAddr] -> do
       arg <- find apAddr
       case arg of
         NNum val -> do
           modifying Machine.stack (Stack.drop 1)
-          modifying Machine.heap (Heap.update apAddr (NNum (negate val)))
+          instantiateWithUpdate (Expr.Num (negate val)) apAddr
         NAp _func arg' -> do
           debugger ("arg is " <> show arg')
-          currStack <- use Machine.stack
-          modifying Machine.dump (Stack.push currStack)
-          assign Machine.stack (pure arg')
-          void eval
-          result <- stackHead
-          lastStack <- Stack.first <$> withinState Machine.dump (Stack.pop 1)
-          debugger ("last stack" <> show lastStack)
-          maybeM Error.emptyStack lastStack >>= assign Machine.stack
+          pushFrame arg'
+          result <- eval *> stackHead
+          popFrame
           case result of
-            NNum a -> modifying Machine.heap (Heap.update apAddr (NNum (negate a)))
+            NNum a -> overwrite apAddr (NNum (negate a))
             other -> Error.badArgument other
           modifying Machine.stack (Stack.drop 1)
           debugger "done modifying"
@@ -223,13 +235,9 @@ primStep (Right op) = do
       let resolve node = case node of
             NNum val -> pure val
             NAp _func arg' -> do
-              currStack <- use Machine.stack
-              modifying Machine.dump (Stack.push currStack)
-              assign Machine.stack (pure arg')
-              void eval
-              result <- stackHead
-              lastStack <- Stack.first <$> withinState Machine.dump (Stack.pop 1)
-              maybeM Error.emptyStack lastStack >>= assign Machine.stack
+              pushFrame arg'
+              result <- eval *> stackHead
+              popFrame
               case result of
                 NNum val -> pure val
                 _ -> Error.badArgument result
@@ -238,7 +246,7 @@ primStep (Right op) = do
       rightVal <- find rightAddr >>= resolve
       let new = NNum (binOpToFunc op leftVal rightVal)
       newNode <- store new
-      modifying Machine.stack (Stack.push newNode . Stack.drop 3)
+      modifying Machine.stack (Stack.replace newNode . Stack.drop 2)
     [] -> Error.emptyStack
     other : _rest -> find other >>= Error.badArgument
 
@@ -286,6 +294,7 @@ instantiate e = case e of
       let newScope = Env.fromList (NonEmpty.zip (fmap fst binds) newVals)
       local (newScope <>) (instantiate bod)
   Let Rec binds bod ->
+    -- Recursive let, defined with mdo
     introducingNames (fmap fst binds) $ mdo
       newVals <- traverse (local (mappend newScope) . instantiate . snd) binds
       let newScope = Env.fromList (NonEmpty.zip (fmap fst binds) newVals)
@@ -303,24 +312,17 @@ instantiateWithUpdate ::
   Addr ->
   m ()
 instantiateWithUpdate e dest = do
-  let update = modifying Machine.heap . Heap.update dest
+  let delegate = instantiate e >>= overwrite dest . NInd
   case e of
-    Expr.Num i -> update (NNum i)
+    Expr.Num i -> overwrite dest (NNum i)
     Expr.Ap a b -> do
       fore <- instantiate a
       aft <- instantiate b
-      update (NAp fore aft)
-    Expr.Var _ ->
-      instantiate e >>= update . NInd
-    Expr.Let {} -> do
-      addr <- instantiate e
-      update (NInd addr)
-    Binary {} -> do
-      addr <- instantiate e
-      update (NInd addr)
-    Unary {} -> do
-      addr <- instantiate e
-      update (NInd addr)
+      overwrite dest (NAp fore aft)
+    Expr.Var _ -> delegate
+    Expr.Let {} -> delegate
+    Binary {} -> delegate
+    Unary {} -> delegate
     other -> Error.unimplemented other
 
 -- Compile and run a program, returning the set of all seen states.
