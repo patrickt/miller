@@ -6,11 +6,11 @@
 
 module Miller.TI where
 
+import Control.Carrier.Accum.Strict
 import Control.Carrier.Error.Either
 import Control.Carrier.Lift
 import Control.Carrier.Reader
 import Control.Carrier.State.Lazy
-import Control.Carrier.Accum.Strict
 import Control.Effect.Optics
 import Control.Monad.Fix
 import Data.List.NonEmpty qualified as NonEmpty
@@ -112,11 +112,11 @@ overwrite addr n = modifying Machine.heap (Heap.update addr n) <* Stats.update
 
 -- Look up the address bound to a given name, or throw 'UnboundName'.
 lookup :: (TI sig m) => Name -> m Addr
-lookup n = asks (Env.lookup n) >>= maybeM (Error.unboundName n)
+lookup n = (asks (Env.lookup n) >>= maybeM (Error.unboundName n)) <* Stats.lookup
 
 -- Find a node in the heap by address, or throw 'DeadPointer'.
 find :: (TI sig m) => Addr -> m Node
-find a = uses Machine.heap (Heap.lookup a) >>= maybeM (Error.deadPointer a)
+find a = (uses Machine.heap (Heap.lookup a) >>= maybeM (Error.deadPointer a)) <* Stats.lookup
 
 -- Introduce, but do not yet bind, names in a context. This is needed to
 -- do scope checking (since we don't use de Brujin indices or something like that)
@@ -152,6 +152,10 @@ popFrame :: (TI sig m) => m ()
 popFrame = do
   recent <- withinState Machine.dump Stack.popFront
   maybeM Error.emptyStack recent >>= assign Machine.stack
+
+-- Return the frontmost item off the stack, failing with 'EmptyStack' if there is none.
+popStack :: (TI sig m) => m Addr
+popStack = withinState Machine.stack Stack.popFront >>= maybeM Error.emptyStack
 
 -- For each item on the N most recent stack entries, extract their argument
 -- (if an Ap node) or their indirect target (if an Ind node) or throw 'BadArgument'.
@@ -200,30 +204,35 @@ numStep _ = Error.numberAppliedAsFunction
 -- As per the unwind rule, we look leftwards and downwards
 -- to get the current thing to apply, so we only look in 'f'.
 apStep :: (TI sig m) => Addr -> Addr -> m ()
-apStep f _x = modifying Machine.stack (Stack.push f)
+apStep f x = do
+  rhs <- find x
+  case rhs of
+    NInd loc -> do
+      debugger "hit indirect"
+      apStep f loc
+    _other -> modifying Machine.stack (Stack.push f) <* Stats.reduction
 
 -- Primitive step (unimplemented)
 primStep :: (TI sig m) => Either UnOp BinOp -> m ()
 primStep (Left Neg) = do
   given <- uses Machine.stack (Stack.contents . Stack.take 2)
-  debugger "unop primitive application"
+  allofthem <- traverse find given
+
+  debugger ("unop primitive application: " <> show allofthem)
   case given of
     [_negAddr, apAddr] -> do
       arg <- find apAddr
       case arg of
-        NNum val -> do
-          modifying Machine.stack (Stack.drop 1)
-          instantiateWithUpdate (Expr.Num (negate val)) apAddr
+        -- Evaluated values...
+        NNum val -> popStack *> instantiateWithUpdate (Expr.Num (negate val)) apAddr
+        -- Function applications
         NAp _func arg' -> do
-          debugger ("arg is " <> show arg')
           pushFrame arg'
           result <- eval *> stackHead
-          popFrame
+          popFrame <* popStack
           case result of
             NNum a -> overwrite apAddr (NNum (negate a))
             other -> Error.badArgument other
-          modifying Machine.stack (Stack.drop 1)
-          debugger "done modifying"
         other -> Error.unimplemented other
     [] -> Error.emptyStack
     other : _rest -> find other >>= Error.badArgument
@@ -231,7 +240,7 @@ primStep (Right op) = do
   given <- uses Machine.stack (Stack.contents . Stack.take 3)
   debugger "bin primitive application"
   case given of
-    [opAddr, leftAddr, rightAddr] -> do
+    [_opAddr, leftAddr, rightAddr] -> do
       let resolve node = case node of
             NNum val -> pure val
             NAp _func arg' -> do
@@ -245,8 +254,8 @@ primStep (Right op) = do
       leftVal <- find leftAddr >>= resolve
       rightVal <- find rightAddr >>= resolve
       let new = NNum (binOpToFunc op leftVal rightVal)
-      newNode <- store new
-      modifying Machine.stack (Stack.replace newNode . Stack.drop 2)
+      overwrite leftAddr new
+      modifying Machine.stack (Stack.replace leftAddr . Stack.drop 2)
     [] -> Error.emptyStack
     other : _rest -> find other >>= Error.badArgument
 
@@ -314,11 +323,11 @@ instantiateWithUpdate ::
 instantiateWithUpdate e dest = do
   let delegate = instantiate e >>= overwrite dest . NInd
   case e of
-    Expr.Num i -> overwrite dest (NNum i)
     Expr.Ap a b -> do
       fore <- instantiate a
       aft <- instantiate b
       overwrite dest (NAp fore aft)
+    Expr.Num i -> overwrite dest (NNum i)
     Expr.Var _ -> delegate
     Expr.Let {} -> delegate
     Binary {} -> delegate

@@ -11,9 +11,11 @@ module Miller.Stats
     update,
     reduction,
     depth,
+    lookup,
   )
 where
 
+import Prelude hiding (lookup)
 import Control.Effect.Accum
 import Data.Monoid
 import Data.Monoid.Generic
@@ -26,17 +28,19 @@ data Stats = Stats
     allocations :: Sum Int,
     reductions :: Sum Int,
     updates :: Sum Int,
+    lookups :: Sum Int,
     maxDepth :: Max Int
   }
   deriving (Show, Generic)
   deriving (Semigroup) via GenericSemigroup Stats
   deriving (Monoid) via GenericMonoid Stats
 
-step, allocation, reduction, update :: (Has (Accum Stats) sig m) => m ()
+step, allocation, reduction, update, lookup :: (Has (Accum Stats) sig m) => m ()
 step = add mempty {steps = 1}
 allocation = add mempty {allocations = 1}
 reduction = add mempty {reductions = 1}
 update = add mempty {updates = 1}
+lookup = add mempty {lookups = 1}
 
 depth :: (Has (Accum Stats) sig m) => Int -> m ()
 depth n = add mempty {maxDepth = Max n}
@@ -48,5 +52,6 @@ instance Pretty Stats where
         "Allocations:" <+> pretty (getSum allocations),
         "Reductions:" <+> pretty (getSum reductions),
         "Updates:" <+> pretty (getSum updates),
+        "Lookups:" <+> pretty (getSum lookups),
         "Maximum stack depth: " <+> pretty (getMax maxDepth)
       ]
