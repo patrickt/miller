@@ -1,17 +1,34 @@
+{-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 module Miller.TI.Stack where
 
 import Doors
+import Optics.Empty
+import Optics.Label ()
+import Optics.Optic
+import Optics.TH
 import Prettyprinter qualified as Pretty
-import Prelude hiding (length, take, drop)
+import Prelude hiding (drop, length, take)
 import Prelude qualified
 
 newtype Stack a = Stack {contents :: [a]}
   deriving stock (Show, Eq)
   deriving newtype (Semigroup, Monoid, Functor, Applicative, Foldable)
 
+makeFieldLabelsNoPrefix ''Stack
+
+instance AsEmpty (Stack a) where
+  _Empty = #contents % _Empty
 
 instance (Pretty.Pretty a) => Pretty.Pretty (Stack a) where
   pretty (Stack st) = Pretty.align (Pretty.list (fmap Pretty.pretty st))
+
+solo :: Stack a -> Maybe a
+solo (Stack [s]) = Just s
+solo _ = Nothing
 
 push :: a -> Stack a -> Stack a
 push x (Stack s) = Stack (x : s)
@@ -32,7 +49,7 @@ drop :: Int -> Stack a -> Stack a
 drop n (Stack s) = Stack (Prelude.drop n s)
 
 popFront :: Stack a -> (Stack a, Maybe a)
-popFront (Stack (a:as)) = (Stack as, Just a)
+popFront (Stack (a : as)) = (Stack as, Just a)
 popFront a = (a, Nothing)
 
 pop :: Int -> Stack a -> (Stack a, Stack a)

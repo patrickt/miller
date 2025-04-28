@@ -1,4 +1,8 @@
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Miller.TI.Heap
   ( Heap,
@@ -21,6 +25,10 @@ import Data.Stream.Infinite qualified as Stream
 import Doors
 import Prettyprinter qualified as Pretty
 import Prelude hiding (lookup)
+import Optics.At
+import Optics.Optic
+import Optics.Label ()
+import Optics.TH
 
 newtype Addr = Addr Int deriving (Eq, Ord, Lower)
 
@@ -37,6 +45,8 @@ data Heap a = Heap
     entries :: IntMap a
   }
 
+makeFieldLabelsNoPrefix ''Heap  
+
 instance (Eq a) => Eq (Heap a) where (==) = (==) `on` entries
 
 instance (Show a) => Show (Heap a) where show = show . entries
@@ -46,6 +56,12 @@ instance (Pretty a) => Pretty (Heap a) where
     let pair (a, b) = pretty a <> ": " <> pretty b
     let elements = fmap pair (IM.toList e)
     Pretty.align (Pretty.list elements)
+
+type instance Index (Heap a) = Addr
+type instance IxValue (Heap a) = a
+
+instance Ixed (Heap a) where
+  ix (Addr i) = #entries % ix i
 
 instance Semigroup (Heap a) where
   a <> b =
